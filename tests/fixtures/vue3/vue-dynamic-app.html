@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vue Dynamic App</title>
+  <script src="./vendor/vue.global.js"></script>
+</head>
+<body>
+  <button id="create">Create App</button>
+  <div id="dynamic-app"></div>
+  <script>
+    const { createApp, h } = Vue;
+
+    document.getElementById('create').addEventListener('click', () => {
+      const app = createApp({
+        render() {
+          throw new Error('dynamic app render error');
+        }
+      });
+      app.mount('#dynamic-app');
+    });
+  </script>
+</body>
+</html>

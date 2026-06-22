@@ -1,0 +1,10 @@
+node_modules/
+*.log
+.DS_Store
+.vscode/
+.idea/
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/dist/
+tests/code-quality-generated/

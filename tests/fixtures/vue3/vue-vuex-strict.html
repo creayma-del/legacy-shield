@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vue Vuex Strict Mode</title>
+  <script src="./vendor/vue.global.js"></script>
+  <script src="./vendor/vuex.global.js"></script>
+</head>
+<body>
+  <div id="app">
+    <button id="trigger-strict">trigger strict violation</button>
+    <button id="trigger-legal-mutation">trigger legal mutation (no violation)</button>
+    <button id="trigger-strict-after-mutation">trigger strict after legal mutation</button>
+  </div>
+  <script>
+    const { createApp } = Vue;
+    const { createStore } = Vuex;
+
+    const store = createStore({
+      strict: true,
+      modules: {
+        user: {
+          namespaced: true,
+          state: () => ({ name: 'alice' }),
+          mutations: {
+            setProfile(state, payload) {
+              state.name = payload && payload.name;
+            },
+          },
+        },
+      },
+    });
+
+    const app = createApp({});
+    app.use(store);
+    app.mount('#app');
+
+    // 触发 strict 违规：未通过 mutation 直接改写 state，watcher 抛错
+    document.querySelector('#trigger-strict').addEventListener('click', () => {
+      try {
+        store.state.user.name = 'eve-mutated-directly';
+      } catch {
+        // strict 违规由 shield commit 包装链路兜底；若 watcher 异步触发则进入 Vue errorHandler
+      }
+    });
+
+    // 合法 mutation：不应产生 strict 违规
+    document.querySelector('#trigger-legal-mutation').addEventListener('click', () => {
+      store.commit('user/setProfile', { name: 'bob' });
+    });
+
+    // 先合法 mutation 再 strict 违规：验证 mutatedKeyPath 字段不为空
+    document.querySelector('#trigger-strict-after-mutation').addEventListener('click', () => {
+      store.commit('user/setProfile', { name: 'mallory' });
+      try {
+        store.state.user.name = 'eve-after';
+      } catch {}
+    });
+  </script>
+</body>
+</html>

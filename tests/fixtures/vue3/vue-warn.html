@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vue Warn</title>
+  <script src="./vendor/vue.global.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    const { createApp, h } = Vue;
+
+    const Child = {
+      props: {
+        count: Number
+      },
+      render() {
+        return h('div', String(this.count));
+      }
+    };
+
+    const app = createApp({
+      render() {
+        return h(Child, { count: 'not-a-number' });
+      }
+    });
+    app.mount('#app');
+  </script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vue Pinia Error</title>
+  <script src="./vendor/vue.global.js"></script>
+  <script>
+    // Pinia 2.x IIFE 依赖全局 VueDemi；Vue 3 单文件场景下用 Vue 充当 shim 即可
+    window.VueDemi = window.Vue;
+  </script>
+  <script src="./vendor/pinia.global.js"></script>
+</head>
+<body>
+  <div id="app">
+    <button id="trigger-sync">trigger sync error</button>
+    <button id="trigger-async">trigger async error</button>
+    <button id="trigger-password">trigger password payload</button>
+    <button id="trigger-token-array">trigger token array args</button>
+    <button id="trigger-dynamic">trigger dynamic store</button>
+  </div>
+  <script>
+    const { createApp } = Vue;
+    const { createPinia, defineStore } = Pinia;
+
+    const pinia = createPinia();
+
+    // 静态 store
+    const useUserStore = defineStore('user', {
+      state: () => ({ name: 'alice', age: 18 }),
+      actions: {
+        causeSyncError() {
+          throw new Error('pinia sync action error');
+        },
+        async causeAsyncError() {
+          await Promise.resolve();
+          throw new Error('pinia async action error');
+        },
+        loginWithPassword(payload) {
+          // payload 含 password 字段，验证 redactValue 脱敏链路
+          throw new Error('pinia password payload error: ' + (payload && payload.password));
+        },
+        loginWithArrayArgs(creds, token) {
+          // args 数组形态，验证 redactValue 数组递归
+          throw new Error('pinia array args error');
+        },
+      },
+    });
+
+    const app = createApp({});
+    app.use(pinia);
+    app.mount('#app');
+
+    const store = useUserStore();
+
+    document.querySelector('#trigger-sync').addEventListener('click', () => {
+      try {
+        store.causeSyncError();
+      } catch {
+        // store action 错误已被 shield $onAction 捕获并落盘
+      }
+    });
+
+    document.querySelector('#trigger-async').addEventListener('click', () => {
+      store.causeAsyncError().catch(() => {
+        // 同上，由 shield 兜底
+      });
+    });
+
+    document.querySelector('#trigger-password').addEventListener('click', () => {
+      try {
+        store.loginWithPassword({ username: 'alice', password: 'p@ssw0rd' });
+      } catch {}
+    });
+
+    document.querySelector('#trigger-token-array').addEventListener('click', () => {
+      try {
+        store.loginWithArrayArgs([{ token: 'secret-token' }], 'extra');
+      } catch {}
+    });
+
+    // 动态注册（TC-15）：页面加载完成、shieldPlugin 已注册后，再首次实例化新 store
+    document.querySelector('#trigger-dynamic').addEventListener('click', () => {
+      const useOrderStore = defineStore('order', {
+        state: () => ({ count: 0 }),
+        actions: {
+          failOnDemand() {
+            throw new Error('pinia dynamic store error');
+          },
+        },
+      });
+      const orderStore = useOrderStore();
+      try {
+        orderStore.failOnDemand();
+      } catch {}
+    });
+  </script>
+</body>
+</html>

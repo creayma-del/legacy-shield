@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vue Router Guard</title>
+  <script src="./vendor/vue.global.js"></script>
+  <script src="./vendor/vue-router.global.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    const { createApp, h } = Vue;
+    const { createRouter, createWebHashHistory } = VueRouter;
+
+    const router = createRouter({
+      history: createWebHashHistory(),
+      routes: [
+        { path: '/', component: { render: () => h('div', 'home') } },
+        { path: '/target', component: { render: () => h('div', 'target') } }
+      ]
+    });
+
+    router.beforeEach(() => {
+      throw new Error('guard thrown error');
+    });
+
+    const app = createApp({
+      render: () => h('router-view')
+    });
+    app.use(router);
+    app.mount('#app');
+
+    setTimeout(() => {
+      router.push('/target').catch(() => {});
+    }, 100);
+  </script>
+</body>
+</html>

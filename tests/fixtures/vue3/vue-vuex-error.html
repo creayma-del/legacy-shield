@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vue Vuex Error</title>
+  <script src="./vendor/vue.global.js"></script>
+  <script src="./vendor/vuex.global.js"></script>
+</head>
+<body>
+  <div id="app">
+    <button id="trigger-action-sync">trigger action sync error</button>
+    <button id="trigger-action-async">trigger action async error</button>
+    <button id="trigger-mutation">trigger mutation error</button>
+    <button id="trigger-subscribe-action">trigger subscribeAction onError</button>
+    <button id="trigger-password">trigger payload password</button>
+  </div>
+  <script>
+    const { createApp } = Vue;
+    const { createStore } = Vuex;
+
+    const store = createStore({
+      modules: {
+        user: {
+          namespaced: true,
+          state: () => ({ name: 'alice', age: 18 }),
+          mutations: {
+            setName(state, payload) {
+              if (payload && payload.willThrow) {
+                throw new Error('vuex mutation error');
+              }
+              state.name = payload && payload.name;
+            },
+            setPassword(state, payload) {
+              throw new Error('vuex password payload error: ' + (payload && payload.password));
+            },
+          },
+          actions: {
+            causeSyncError() {
+              throw new Error('vuex sync action error');
+            },
+            async causeAsyncError() {
+              await Promise.resolve();
+              throw new Error('vuex async action error');
+            },
+            subscribeActionFail({ dispatch }) {
+              return Promise.reject(new Error('vuex subscribeAction error'));
+            },
+          },
+        },
+      },
+    });
+
+    const app = createApp({});
+    app.use(store);
+    app.mount('#app');
+
+    document.querySelector('#trigger-action-sync').addEventListener('click', () => {
+      try {
+        store.dispatch('user/causeSyncError');
+      } catch {}
+    });
+
+    document.querySelector('#trigger-action-async').addEventListener('click', () => {
+      store.dispatch('user/causeAsyncError').catch(() => {});
+    });
+
+    document.querySelector('#trigger-mutation').addEventListener('click', () => {
+      try {
+        store.commit('user/setName', { willThrow: true });
+      } catch {}
+    });
+
+    document.querySelector('#trigger-subscribe-action').addEventListener('click', () => {
+      // 异步 reject 由 subscribeAction({ error }) 捕获
+      store.dispatch('user/subscribeActionFail').catch(() => {});
+    });
+
+    document.querySelector('#trigger-password').addEventListener('click', () => {
+      try {
+        store.commit('user/setPassword', { username: 'alice', password: 'p@ssw0rd' });
+      } catch {}
+    });
+  </script>
+</body>
+</html>

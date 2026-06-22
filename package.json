@@ -1,0 +1,58 @@
+{
+  "name": "legacy-shield",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "非侵入式老项目护航工具：运行时监控、提交前质量保障、项目状态分析与 AI 接口",
+  "bin": {
+    "legacy-shield": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "packageManager": "pnpm@10.33.4",
+  "scripts": {
+    "build": "tsc && node scripts/strip-inject-export.js",
+    "dev": "tsc --watch",
+    "clean": "node -e \"import('node:fs').then(fs => fs.rmSync('dist', { recursive: true, force: true }))\"",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "shield": "node ./dist/cli.js shield",
+    "quality": "node ./dist/cli.js quality",
+    "report": "node ./dist/cli.js report",
+    "api": "node ./dist/cli.js api",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "commander": "^11.0.0",
+    "http-proxy": "^1.18.1",
+    "playwright": "^1.44.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/eslint-parser": "^7.29.7",
+    "@babel/parser": "^7.29.7",
+    "@babel/traverse": "^7.29.0",
+    "@babel/types": "^7.29.7",
+    "@eslint/eslintrc": "^3.3.5",
+    "@types/babel__traverse": "^7.28.0",
+    "@types/http-proxy": "^1.17.17",
+    "@types/node": "^22.19.21",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "@vue/compiler-sfc": "^3.5.38",
+    "@vue/eslint-config-prettier": "^9.0.0",
+    "@vue/test-utils": "^2.4.11",
+    "chokidar": "^4.0.0",
+    "eslint": "^9.30.0",
+    "eslint-config-prettier": "^9.1.2",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-prettier": "^5.5.6",
+    "eslint-plugin-vue": "^10.9.2",
+    "jsdom": "^29.1.1",
+    "jiti": "^2.6.1",
+    "prettier": "^3.8.4",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.8",
+    "vue-tsc": "^3.3.4"
+  }
+}
