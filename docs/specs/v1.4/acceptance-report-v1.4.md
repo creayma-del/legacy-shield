@@ -8,7 +8,7 @@
 > 对应执行计划：[execution-plan-v1.4.md](execution-plan-v1.4.md)
 > 对应阶段 Spec：[phases/phase-v1.4-spec.md](phases/phase-v1.4-spec.md)
 > 对应任务 Spec：T1 ~ T7（见 [phases/](phases/) 目录）
-> 状态：已完成，待用户 / 产品负责人签字归档
+> 状态：已完成，已归档（冻结，不再修改）
 
 ---
 
@@ -243,15 +243,15 @@ Duration  23.13s
 
 ### 7.2 用户 / 产品负责人
 
-- 签字人：__________________________
-- 签字日期：__________________________
-- 签字结论：☐ 通过归档　　☐ 退回（请说明原因：__________________________）
+- 签字人：creayma
+- 签字日期：2026-06-22
+- 签字结论：☑ 通过归档
 
 ---
 
-## 8. 归档清单与顺序（待用户授权后执行）
+## 8. 归档清单与顺序（已执行）
 
-按 [spec-guardian-checklists 归档前最终检查清单](file:///Users/creayma/personal/legacy-shield/.trae/skills/spec-guardian-checklists/SKILL.md)，v1.4 归档建议顺序：
+按 [spec-guardian-checklists 归档前最终检查清单](file:///Users/creayma/personal/legacy-shield/.trae/skills/spec-guardian-checklists/SKILL.md)，v1.4 归档顺序：
 
 1. `docs/specs/v1.4/phases/phase-v1.4-t1-spec.md` ~ `phase-v1.4-t7-spec.md`
 2. `docs/specs/v1.4/phases/phase-v1.4-spec.md`
@@ -261,4 +261,4 @@ Duration  23.13s
 6. `docs/specs/v1.4/requirements-v1.4.md`
 7. 本文档 `docs/specs/v1.4/acceptance-report-v1.4.md`
 
-> 本任务（T7）不执行实际文件状态写入操作；待用户 / 产品负责人签字「通过」后，由用户授权或单独 PATCH 任务统一执行归档。
+> 用户 / 产品负责人已于 2026-06-22 签字「通过」，所有 v1.4 文档状态已更新为「已完成，已归档（冻结，不再修改）」。

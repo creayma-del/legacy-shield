@@ -5,7 +5,7 @@
 > 对应需求分解文档：[requirements-decomposition-v1.4.md](../requirements-decomposition-v1.4.md)
 > 对应设计文档：[design-v1.4.md](../design-v1.4.md)
 > 对应执行计划：[execution-plan-v1.4.md](../execution-plan-v1.4.md)
-> 状态：已通过
+> 状态：已完成，已归档（冻结，不再修改）
 > 编制日期：2026-06-22
 > 评审记录：见本文档末尾 §7（轮次 1 通过，含 5 条 P2 在任务 Spec / 实现阶段闭环）
 

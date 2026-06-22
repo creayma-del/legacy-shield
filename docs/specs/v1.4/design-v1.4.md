@@ -4,7 +4,7 @@
 > 对应需求文档：[requirements-v1.4.md](requirements-v1.4.md)
 > 对应需求分解文档：[requirements-decomposition-v1.4.md](requirements-decomposition-v1.4.md)
 > 对应会议纪要：[meetings/requirements-alignment-v1.4-20260622.md](meetings/requirements-alignment-v1.4-20260622.md)
-> 状态：已通过
+> 状态：已完成，已归档（冻结，不再修改）
 > 编制日期：2026-06-22
 > 评审记录：见文档末尾 §9（轮次 1 不通过、轮次 2 通过）
 
