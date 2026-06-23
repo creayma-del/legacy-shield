@@ -6,8 +6,8 @@
 > 对应设计文档：[design-v1.5.md](../design-v1.5.md)
 > 对应执行计划：[execution-plan-v1.5.md](../execution-plan-v1.5.md)
 > 依赖任务：T5（lib/knowledge-graph/graph.ts buildGraph 产出的 KnowledgeGraph 结构 + computeComponents 函数）
-> 状态：评审中（待评审）
-> 评审记录：见本文档末尾（轮次 1 待评审）
+> 状态：已完成，已归档（冻结，不再修改）
+> 评审记录：见本文档末尾（轮次 1 已通过）
 
 ---
 
@@ -38,7 +38,7 @@
 
 ### 3.1 新增 `lib/knowledge-graph/analyzer.ts`
 
-> 本文件为图谱分析模块，不引入任何新的运行时依赖，仅依赖 T5 产出的 `KnowledgeGraph` 类型与 `computeComponents` 函数。
+> 本文件为图谱分析模块，不引入任何新的运行时依赖，仅依赖 T5 产出的 `KnowledgeGraph` 类型与结构。
 >
 > 文件顶部 import：
 >
@@ -49,8 +49,9 @@
 >   GraphStats,
 >   NodeRole,
 > } from './types.js';
-> import { computeComponents } from './graph.js';
 > ```
+>
+> **P1 修复说明**：原 import `computeComponents` 未在 `analyzeGraph` / `inferLayers` 实现中使用，将导致 `pnpm typecheck` 失败（项目启用 `noUnusedLocals`）。T5 的 `buildGraph` 已在内部调用 `computeComponents` 填充 `GraphStats.componentCount`，T6 只需消费 `graph.stats.componentCount`，无需再次调用或导入 `computeComponents`。
 
 ### 3.2 实现 `analyzeGraph` 函数
 
@@ -169,7 +170,9 @@ export function inferLayers(
 }
 ```
 
-**实现**（严格遵循设计文档 §5.4）：
+**实现**：
+
+> **P2 修复说明（5 层与 4 层差异）**：`inferLayers` 实现 5 层分类（entry / core / middle / leaf / isolated），与设计文档 §5.4 的文字描述（4 层：入口层 / 核心层 / 叶子层 / 中间层，无孤立层）存在差异，但与阶段 Spec §3.6、执行计划 T6、设计文档 §7.2 样例一致。孤立文件单独分类更合理，§5.4 文字描述遗漏孤立层，后续通过 PATCH 流程修订设计文档 §5.4 补充孤立层。
 
 ```typescript
 export function inferLayers(
@@ -255,7 +258,7 @@ export function inferLayers(
 **`analyzeGraph` 测试用例**：
 
 - **TC-A1 isEntry 统一计算**：构建一个含 3 节点的图（`a` 入度=0 出度=2，`b` 入度=1 出度=1，`c` 入度=1 出度=0），`analyzeGraph` 后 `a.isEntry === true`、`b.isEntry === false`、`c.isEntry === false`。
-- **TC-A2 isEntry 不在边插入过程中计算**：代码审查确认 `buildGraph`（T5）中 `isEntry` 初始为 `false`，仅由 `analyzeGraph` 统一计算。
+- **TC-A2 isEntry 初始值为 false**：构建一个含 2 节点的图（`a` 入度=0 出度=1，`b` 入度=1 出度=0），在调用 `analyzeGraph` 之前断言 `a.isEntry === false`、`b.isEntry === false`（`buildGraph` 不计算 `isEntry`），调用 `analyzeGraph` 后断言 `a.isEntry === true`、`b.isEntry === false`。
 - **TC-A3 role 分类 - entry**：`inDegree === 0 && outDegree > 0` 的节点 `role === 'entry'`。
 - **TC-A4 role 分类 - isolated**：`inDegree === 0 && outDegree === 0` 的节点 `role === 'isolated'`。
 - **TC-A5 role 分类 - core**：`inDegree >= hubThreshold`（如 hubThreshold=10，inDegree=12）的节点 `role === 'core'`。
@@ -263,7 +266,7 @@ export function inferLayers(
 - **TC-A7 role 分类 - unknown**：`inDegree > 0 && inDegree < hubThreshold && outDegree > 0` 的节点 `role === 'unknown'`。
 - **TC-A8 hub 阈值边界**：`hubThreshold=10`，`inDegree=10` 的节点 `role === 'core'`（`>=` 包含等于）；`inDegree=9` 的节点 `role !== 'core'`。
 - **TC-A9 hub 阈值默认值**：`hubThreshold` 未传时默认为 10（由 T10 编排入口保证，本任务函数签名要求显式传入）。
-- **TC-A10 hub 阈值为 0**：`hubThreshold=0`，所有 `inDegree >= 0` 的节点均满足 core 条件，但由于优先级 `entry` / `isolated` 先判断，仅 `inDegree > 0` 的节点 `role === 'core'`；`inDegree === 0` 的节点仍为 `entry` 或 `isolated`。
+- **TC-A10 hub 阈值为 0**：构建含 4 节点的图（`a` 入度=0 出度=1，`b` 入度=0 出度=0，`c` 入度=2 出度=1，`d` 入度=1 出度=0），传入 `hubThreshold=0`，断言 `a.role === 'entry'`、`b.role === 'isolated'`、`c.role === 'core'`（`inDegree=2 >= 0` 且 `inDegree > 0`）、`d.role === 'core'`（`inDegree=1 >= 0` 且 `inDegree > 0`）；`stats.hubCount === 2`（`c` 和 `d`）。
 - **TC-A11 GraphStats 完整填充**：`analyzeGraph` 后 `stats` 的 10 个字段全部非 undefined；`hubCount` + `isolatedCount` + `entryCount` 与节点实际状态一致。
 - **TC-A12 maxInDegree / maxOutDegree**：构建含 `inDegree=5` 与 `outDegree=3` 最大值的图，`stats.maxInDegree === 5`、`stats.maxOutDegree === 3`。
 - **TC-A13 unresolvedEdgeCount**：构建含 2 条未解析边的图，`stats.unresolvedEdgeCount === 2`。
@@ -285,7 +288,7 @@ export function inferLayers(
 
 > 由 T12 在 `tests/knowledge-graph/integration.test.ts` 中覆盖，本任务不涉及。
 
-- **simple-project 夹具端到端**：`analyzeGraph` 后 `main.ts` 的 `role === 'entry'`、`isEntry === true`；`utils/request.ts` 的 `role === 'core'`（若被 ≥10 个文件依赖，夹具规模较小时可能为 `unknown`）。
+- **simple-project 夹具端到端**：`analyzeGraph` 后 `main.ts` 的 `role === 'entry'`、`isEntry === true`；`utils/request.ts` 在 `hubThreshold` 设为夹具实际依赖数以下时 `role === 'core'`，否则 `role === 'unknown'`（夹具规模较小，需通过调低 `hubThreshold` 或增加依赖文件数来覆盖 core 场景）。
 - **cycle-project 夹具端到端**：循环中的节点 role 分类正确。
 
 ### 4.3 回归测试
@@ -326,4 +329,4 @@ export function inferLayers(
 
 | 轮次 | 日期 | 结论 | P0/P1 问题 | 修复方案 |
 |---|---|---|---|---|
-| 1 | 待评审 | 待评审 | — | — |
+| 1 | 2026-06-23 | 修改后通过 | P1：`computeComponents` 导入未使用（`noUnusedLocals` 报错）；P2：5 层与 4 层差异未说明、TC-A2 为代码审查项非可执行用例、§4.2 集成测试 role 描述矛盾、TC-A10 缺少显式断言 | P1：移除 `computeComponents` 导入并补充说明 T5 已填充 `componentCount`；P2：补充 5 层差异说明及 PATCH 计划、TC-A2 改为可执行测试用例（断言 `isEntry` 初始值与计算后值）、§4.2 改为条件描述（调低 `hubThreshold` 或增加依赖数覆盖 core）、TC-A10 补充 4 节点具体数据与断言 |

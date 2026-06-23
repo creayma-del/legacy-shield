@@ -3,7 +3,7 @@
 > 版本：v1.5
 > 对应需求文档：[meetings/requirements-alignment-v1.5-20260622.md](meetings/requirements-alignment-v1.5-20260622.md)
 > 对应需求分解文档：[requirements-decomposition-v1.5.md](requirements-decomposition-v1.5.md)
-> 状态：已通过
+> 状态：已完成，已归档（冻结，不再修改）
 > 编制日期：2026-06-22
 > 评审记录：见文档末尾
 

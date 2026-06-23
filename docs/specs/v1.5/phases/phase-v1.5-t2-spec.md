@@ -6,8 +6,8 @@
 > 对应设计文档：[design-v1.5.md](../design-v1.5.md)
 > 对应执行计划：[execution-plan-v1.5.md](../execution-plan-v1.5.md)
 > 依赖任务：无
-> 状态：评审中（待评审）
-> 评审记录：见本文档末尾（轮次 1 待评审）
+> 状态：已完成，已归档（冻结，不再修改）
+> 评审记录：见本文档末尾
 
 ---
 
@@ -194,7 +194,9 @@
     try {
       const raw = readFileSync(configPath, 'utf8');
       // 去除 JSON 注释（tsconfig 常见）
-      const cleaned = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/g, '');
+      // P1 修复：原 /\/\/.*$/g 缺 m 标志，多行 tsconfig 中只有最后一行注释被移除
+      // 改为 /\/\/[^\n]*/g，无需 m 标志即可匹配每行内的 // 注释
+      const cleaned = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
       const config = JSON.parse(cleaned);
       const compilerOptions = config.compilerOptions ?? {};
       const baseUrl: string | undefined = compilerOptions.baseUrl;
@@ -295,4 +297,4 @@
 
 | 轮次 | 日期 | 结论 | P0/P1 问题 | 修复方案 |
 |---|---|---|---|---|
-| 1 | 待评审 | 待评审 | — | — |
+| 1 | 2026-06-22 | 修改后通过 | P1：`createResolver` 中去除 `//` 注释的正则 `/\/\/.*$/g` 缺 `m` 标志，多行 tsconfig 中只有最后一行注释被移除 | 改为 `/\/\/[^\n]*/g`，使用 `[^\n]` 限定单行匹配，无需 `m` 标志即可正确移除每行内的 `//` 注释 |

@@ -9,7 +9,8 @@ legacy-shield 不需要修改业务系统源码，即可在本地开发环境中
 - 通过 Playwright 运行时采集内存泄漏与资源加载长耗时/大体积信息；
 - 按日期聚合日志并生成 JSON / Markdown 报告；
 - 将监控结果以 NDJSON 结构化日志持久化到本地，为 AI 智能体提供完整上下文；
-- 提供本地 REST API，方便 AI 智能体、IDE 插件或 CI 流水线消费监控数据。
+- 提供本地 REST API，方便 AI 智能体、IDE 插件或 CI 流水线消费监控数据；
+- 生成项目知识图谱（`graph` 子命令），基于 AST 静态分析输出文件级依赖图、循环依赖、hub 文件与分层架构，为 AI 智能体提供项目结构上下文。
 
 ## 安装步骤
 
@@ -128,6 +129,49 @@ curl -s "http://127.0.0.1:3456/logs?type=runtime&date=$(date +%Y-%m-%d)"
 curl -s "http://127.0.0.1:3456/report?format=json&date=$(date +%Y-%m-%d)"
 ```
 
+### 5. 生成项目知识图谱（graph）
+
+```bash
+# 生成知识图谱（JSON + Markdown 双格式）
+node ./dist/cli.js graph --project /Users/creayma/work/sichuan/event
+
+# 仅生成 JSON 格式
+node ./dist/cli.js graph --project /Users/creayma/work/sichuan/event --format json
+
+# 仅生成 Markdown 格式
+node ./dist/cli.js graph --project /Users/creayma/work/sichuan/event --format md
+
+# 自定义输出目录
+node ./dist/cli.js graph --project /Users/creayma/work/sichuan/event --out /custom/output/path
+
+# 强制全量重建（忽略缓存）
+node ./dist/cli.js graph --project /Users/creayma/work/sichuan/event --fresh
+
+# 自定义并发数与 hub 阈值
+node ./dist/cli.js graph --project /Users/creayma/work/sichuan/event --concurrency 16 --hub-threshold 5
+```
+
+`graph` 子命令为目标项目生成 AI 可读的项目知识图谱，基于 Babel AST 静态分析 import / export / require / dynamic-import 依赖关系，输出文件级依赖图、循环依赖链、hub 文件、分层架构等关键信息。
+
+**输出文件**（默认输出到 `<project>/.legacy-shield/knowledge-graph/`）：
+
+- `knowledge-graph.json`：机器可读的 JSON 格式知识图谱（含 `meta` / `nodes` / `edges` / `cycles` / `stats` 五个顶层字段）
+- `architecture-summary.md`：中文 AI 优化格式的架构摘要（6 章节：项目架构概览 / 模块依赖拓扑 / 关键节点识别 / 循环依赖分析 / 分层结构推断 / 架构健康度评估）
+- `.cache.json`：mtime 缓存（隐藏文件，用于增量更新）
+
+**与 quality 子命令的关系**：完全独立，不自动集成。运行 `shield graph` 不触发 quality 流程，反之亦然。
+
+**支持的路径解析**：相对路径、tsconfig/jsconfig paths alias（`@/*` 等）、node_modules 包（含 scoped 包）、扩展名补全（`.ts` / `.tsx` / `.js` / `.jsx` / `.vue`）、index 文件解析。
+
+**monorepo 支持**：自动识别 `package.json` workspaces → `lerna.json` → `pnpm-workspace.yaml`（简化解析）→ `packages/*` 目录约定（4 级优先级），为每个子包生成独立图谱 + 全局聚合图谱。支持 `workspace:*` / `link:` / `file:` / node_modules 软链接跨包依赖协议。
+
+**不支持的场景**（明确说明）：
+
+- webpack `resolve.alias` 配置（需读取 `webpack.config.js`）
+- vite `resolve.alias` 配置（需读取 `vite.config.ts`）
+- 动态 `import()` 变量表达式的解析（标记为 unresolved 边）
+- 变量 `require()` 路径解析（标记为 unresolved 边）
+
 ## 支持的框架与平台
 
 `legacy-shield` 监控对象扩展为公司内部 Web 端与移动端 H5 业务系统：
@@ -219,6 +263,17 @@ curl -s "http://127.0.0.1:3456/report?format=json&date=$(date +%Y-%m-%d)"
 | `--project <path>` | 老项目根路径（必填） | - |
 | `--port <port>` | 服务端口 | `3456` |
 | `--cors` | 启用跨域 | `false` |
+
+### `graph`
+
+| 参数 | 说明 | 默认值 |
+|---|---|---|
+| `--project <path>` | 目标项目根路径（必填） | - |
+| `--out <path>` | 输出目录 | `<project>/.legacy-shield/knowledge-graph/` |
+| `--concurrency <n>` | 并发扫描数，必须 >= 1 | `8` |
+| `--fresh` | 强制全量重建，忽略缓存 | `false` |
+| `--format <format>` | 输出格式（`json` / `md` / `both`） | `both` |
+| `--hub-threshold <n>` | hub 文件入度阈值，必须 >= 0 | `10` |
 
 ## 与 code-quality 的关系
 

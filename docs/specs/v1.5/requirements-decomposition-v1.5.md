@@ -3,7 +3,7 @@
 > 版本：v1.5
 > 对应需求文档：[requirements-alignment-v1.5-20260622.md](meetings/requirements-alignment-v1.5-20260622.md)
 > 对应会议纪要：[meetings/requirements-alignment-v1.5-20260622.md](meetings/requirements-alignment-v1.5-20260622.md)
-> 状态：已批准
+> 状态：已完成，已归档（冻结，不再修改）
 > 编制日期：2026-06-22
 > 批准日期：2026-06-22
 

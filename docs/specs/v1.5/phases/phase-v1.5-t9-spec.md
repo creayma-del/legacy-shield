@@ -6,8 +6,8 @@
 > 对应设计文档：[design-v1.5.md](../design-v1.5.md)
 > 对应执行计划：[execution-plan-v1.5.md](../execution-plan-v1.5.md)
 > 依赖任务：T2（ModuleResolver）、T4（scanFilesConcurrent）、T5（buildGraph / detectCycles / computeComponents）、T6（analyzeGraph / inferLayers）
-> 状态：评审中（待评审）
-> 评审记录：见本文档末尾（轮次 1 待评审）
+> 状态：已完成，已归档（冻结，不再修改）
+> 评审记录：见本文档末尾
 
 ---
 
@@ -231,28 +231,30 @@ export function detectMonorepo(projectRoot: string): { isMonorepo: boolean; pack
 
 **函数签名**：
 ```typescript
-export function generatePackageGraph(
+export async function generatePackageGraph(
   packageRoot: string,
   options: GraphOptions,
-): KnowledgeGraph;
+): Promise<KnowledgeGraph>;
 ```
 
 **职责**：以子包根目录为 projectRoot，生成该子包的独立图谱。
 
+> **P0 修复说明**：`scanFilesConcurrent`（T4）为 `async function`，本函数必须声明为 `async` 并 `await scanFilesConcurrent(...)`，返回 `Promise<KnowledgeGraph>`。同步签名会导致返回 `Promise` 对象但未等待，后续 `buildGraph` 拿到的是未 resolve 的结果。
+
 **实现步骤**：
 1. 读取子包的 `tsconfig.json` / `jsconfig.json`，构造 `ModuleResolver`（复用 T2 的解析逻辑）。
 2. 收集子包 `src/` 目录下的所有 JS/JSX/TS/TSX/Vue 文件路径。
-3. 调用 `scanFilesConcurrent`（T4）扫描文件，返回 `Map<string, CollectedFile>`。
+3. `await` 调用 `scanFilesConcurrent`（T4）扫描文件，返回 `Map<string, CollectedFile>`。
 4. 调用 `buildGraph`（T5）构建 `KnowledgeGraph`。
 5. 调用 `analyzeGraph`（T6）填充 role / isEntry / stats。
 6. 为所有节点的 `packageName` 字段赋值为子包名（从子包 `package.json` 的 `name` 字段读取；若无 `name` 字段，使用子包目录名）。
 7. 设置 `graph.isMonorepo = true`、`graph.packages = [packageRoot]`、`graph.projectRoot = packageRoot`。
 
 ```typescript
-export function generatePackageGraph(
+export async function generatePackageGraph(
   packageRoot: string,
   options: GraphOptions,
-): KnowledgeGraph {
+): Promise<KnowledgeGraph> {
   // 1. 读取子包 tsconfig/jsconfig，构造 resolver
   const resolver = createResolverForPackage(packageRoot);
 
@@ -260,9 +262,9 @@ export function generatePackageGraph(
   const srcDir = join(packageRoot, 'src');
   const filePaths = collectSourceFiles(srcDir);
 
-  // 3. 并发扫描
+  // 3. 并发扫描（await 异步结果）
   const concurrency = options.concurrency ?? 8;
-  const collected = scanFilesConcurrent(filePaths, resolver, concurrency);
+  const collected = await scanFilesConcurrent(filePaths, resolver, concurrency);
 
   // 4. 构建图
   const hubThreshold = options.hubThreshold ?? 10;
@@ -298,28 +300,35 @@ export function generatePackageGraph(
 export function generateAggregateGraph(
   packageGraphs: KnowledgeGraph[],
   projectRoot: string,
+  hubThreshold: number,
 ): KnowledgeGraph;
 ```
 
 **职责**：合并所有子包的独立图谱为全局聚合图谱，解析跨包依赖，重新计算统计指标。
 
+> **P1 修复说明**：
+> 1. **projectRoot 取值**：`resolveCrossPackageDependencies` 中的 `projectRoot` 必须使用传入的 monorepo 根路径（参数），而非 `packageGraphs[0]?.projectRoot`（子包根路径）。`link:` / `file:` 协议的相对路径需相对于 monorepo 根解析。
+> 2. **重复边移除**：合并子包图谱边时，原始 `unresolved === true` 的边在跨包依赖被成功解析后必须移除，否则聚合图谱会同时包含原始 unresolved 边与新建的跨包边，造成重复。实现策略：先收集所有被跨包解析替代的原始边（`from + rawSpec` 作为 key），合并时跳过这些边。
+> 3. **hubThreshold 参数化**：`hubThreshold` 不再硬编码为 10，而是由 T10 编排入口传入（来自 `options.hubThreshold ?? 10`），确保与单包流程使用相同阈值。
+
 **实现步骤**：
 1. 创建空的聚合图谱结构（nodes / adjacency / reverseAdjacency / edges / cycles / stats）。
 2. 合并所有子包图谱的节点与边（节点 id 使用绝对路径，天然去重）。
-3. 解析跨包依赖（见 §3.5）。
-4. 重新计算聚合图的 `cycles`（调用 T5 的 `detectCycles`）。
-5. 重新计算 `stats`（调用 T5 的 `computeComponents` + T6 的 `analyzeGraph`）。
-6. 设置 `graph.isMonorepo = true`、`graph.packages` 为所有子包路径、`graph.projectRoot = projectRoot`。
+3. 解析跨包依赖（见 §3.5），获取跨包边与被替代的原始边 key 集合。
+4. 合并边时跳过被跨包解析替代的原始 unresolved 边，追加跨包边。
+5. 重建 `adjacency` / `reverseAdjacency`（基于过滤后的 edges 重建，确保一致性）。
+6. 重新计算聚合图的 `cycles`（调用 T5 的 `detectCycles`）。
+7. 重新计算 `stats`（调用 T5 的 `computeComponents` + T6 的 `analyzeGraph`，使用传入的 `hubThreshold`）。
+8. 设置 `graph.isMonorepo = true`、`graph.packages` 为所有子包路径、`graph.projectRoot = projectRoot`。
 
 ```typescript
 export function generateAggregateGraph(
   packageGraphs: KnowledgeGraph[],
   projectRoot: string,
+  hubThreshold: number,
 ): KnowledgeGraph {
   const nodes = new Map<string, GraphNode>();
-  const adjacency = new Map<string, string[]>();
-  const reverseAdjacency = new Map<string, string[]>();
-  const edges: GraphEdge[] = [];
+  const allEdges: GraphEdge[] = [];
 
   // 1. 合并所有子包的节点与边
   for (const pkgGraph of packageGraphs) {
@@ -327,35 +336,47 @@ export function generateAggregateGraph(
       nodes.set(id, node);
     }
     for (const edge of pkgGraph.edges) {
-      edges.push(edge);
-    }
-    for (const [from, tos] of pkgGraph.adjacency) {
-      if (!adjacency.has(from)) adjacency.set(from, []);
-      adjacency.get(from)!.push(...tos);
-    }
-    for (const [to, froms] of pkgGraph.reverseAdjacency) {
-      if (!reverseAdjacency.has(to)) reverseAdjacency.set(to, []);
-      reverseAdjacency.get(to)!.push(...froms);
+      allEdges.push(edge);
     }
   }
 
   // 2. 解析跨包依赖（workspace:* / link: / file: / node_modules 软链接）
-  const crossPackageEdges = resolveCrossPackageDependencies(packageGraphs, nodes);
-  edges.push(...crossPackageEdges);
-  for (const edge of crossPackageEdges) {
+  //    返回跨包边 + 被替代的原始边 key 集合
+  const { crossEdges, replacedEdgeKeys } = resolveCrossPackageDependencies(
+    packageGraphs,
+    nodes,
+    projectRoot,
+  );
+
+  // 3. 过滤掉被跨包解析替代的原始 unresolved 边，追加跨包边
+  const edges: GraphEdge[] = [];
+  for (const edge of allEdges) {
+    const key = `${edge.from}|${edge.rawSpec}`;
+    if (edge.unresolved && replacedEdgeKeys.has(key)) {
+      // 该原始 unresolved 边已被跨包边替代，跳过
+      continue;
+    }
+    edges.push(edge);
+  }
+  edges.push(...crossEdges);
+
+  // 4. 基于过滤后的 edges 重建 adjacency / reverseAdjacency
+  const adjacency = new Map<string, string[]>();
+  const reverseAdjacency = new Map<string, string[]>();
+  for (const edge of edges) {
     if (!adjacency.has(edge.from)) adjacency.set(edge.from, []);
     adjacency.get(edge.from)!.push(edge.to);
     if (!reverseAdjacency.has(edge.to)) reverseAdjacency.set(edge.to, []);
     reverseAdjacency.get(edge.to)!.push(edge.from);
   }
 
-  // 3. 重新计算入度/出度
+  // 5. 重新计算入度/出度
   for (const [id, node] of nodes) {
     node.inDegree = reverseAdjacency.get(id)?.length ?? 0;
     node.outDegree = adjacency.get(id)?.length ?? 0;
   }
 
-  // 4. 构建聚合图谱
+  // 6. 构建聚合图谱
   const aggregateGraph: KnowledgeGraph = {
     projectRoot,
     isMonorepo: true,
@@ -368,11 +389,10 @@ export function generateAggregateGraph(
     stats: {} as GraphStats,
   };
 
-  // 5. 重新计算循环依赖
+  // 7. 重新计算循环依赖
   aggregateGraph.cycles = detectCycles(adjacency);
 
-  // 6. 重新计算统计指标（调用 T6 analyzeGraph）
-  const hubThreshold = 10; // 聚合图使用默认阈值，由 T10 传入
+  // 8. 重新计算统计指标（调用 T6 analyzeGraph，使用传入的 hubThreshold）
   return analyzeGraph(aggregateGraph, hubThreshold);
 }
 ```
@@ -384,10 +404,17 @@ export function generateAggregateGraph(
 function resolveCrossPackageDependencies(
   packageGraphs: KnowledgeGraph[],
   nodes: Map<string, GraphNode>,
-): GraphEdge[];
+  projectRoot: string,
+): { crossEdges: GraphEdge[]; replacedEdgeKeys: Set<string> };
 ```
 
 **职责**：扫描所有子包图谱中 `unresolved === true` 的边，尝试通过 workspace 协议解析为跨包依赖。
+
+**返回值**：
+- `crossEdges`：新建的跨包边列表。
+- `replacedEdgeKeys`：被跨包边替代的原始 unresolved 边的 key 集合（`${from}|${rawSpec}`），供 `generateAggregateGraph` 过滤原始边使用。
+
+> **P1 修复说明**：`projectRoot` 参数为 monorepo 根路径（由 `generateAggregateGraph` 传入），用于 `link:` / `file:` 协议的相对路径解析。不再使用 `packageGraphs[0]?.projectRoot`（子包根路径）。
 
 **支持的协议**：
 
@@ -428,10 +455,11 @@ function resolveCrossPackageDependencies(
 function resolveCrossPackageDependencies(
   packageGraphs: KnowledgeGraph[],
   nodes: Map<string, GraphNode>,
-): GraphEdge[] {
+  projectRoot: string,
+): { crossEdges: GraphEdge[]; replacedEdgeKeys: Set<string> } {
   const crossEdges: GraphEdge[] = [];
+  const replacedEdgeKeys = new Set<string>();
   const packageByName = buildPackageByNameMap(packageGraphs);
-  const projectRoot = packageGraphs[0]?.projectRoot ?? '';
 
   for (const pkgGraph of packageGraphs) {
     const pkgJsonPath = join(pkgGraph.projectRoot, 'package.json');
@@ -456,13 +484,15 @@ function resolveCrossPackageDependencies(
                 unresolved: false,
                 rawSpec: edge.rawSpec,
               });
+              // 记录被替代的原始边 key，供 generateAggregateGraph 过滤
+              replacedEdgeKeys.add(`${edge.from}|${edge.rawSpec}`);
             }
           }
         }
       }
     }
   }
-  return crossEdges;
+  return { crossEdges, replacedEdgeKeys };
 }
 ```
 
@@ -596,4 +626,4 @@ function expandWorkspaceGlobs(projectRoot: string, globs: string[]): string[] {
 
 | 轮次 | 日期 | 结论 | P0/P1 问题 | 修复方案 |
 |---|---|---|---|---|
-| 1 | 待评审 | 待评审 | — | — |
+| 1 | 2026-06-22 | 修改后通过 | P0：`generatePackageGraph` 同步调用异步 `scanFilesConcurrent` 未 await；P1：`resolveCrossPackageDependencies` 中 `projectRoot` 取 `packageGraphs[0]?.projectRoot`（子包根）而非 monorepo 根；P1：聚合图谱产生重复边（原始 unresolved 边未移除）；P1：`analyzeGraph` 被 T9 和 T10 重复调用且 `hubThreshold` 硬编码为 10 | P0：`generatePackageGraph` 改为 `async function`，返回 `Promise<KnowledgeGraph>`，内部 `await scanFilesConcurrent(...)`；P1：`resolveCrossPackageDependencies` 增加 `projectRoot` 参数（由 `generateAggregateGraph` 传入 monorepo 根）；P1：`resolveCrossPackageDependencies` 返回 `replacedEdgeKeys` 集合，`generateAggregateGraph` 过滤被替代的原始 unresolved 边；P1：`generateAggregateGraph` 增加 `hubThreshold` 参数（由 T10 传入），T10 `runMonorepoFlow` 不再重复调用 `analyzeGraph` |

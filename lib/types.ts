@@ -414,6 +414,40 @@ export interface ApiCommandOptions {
   cors?: boolean;
 }
 
+export interface GraphOptions {
+  /** 目标项目根路径（必填） */
+  project: string;
+  /** 输出目录（未传时默认 <project>/.legacy-shield/knowledge-graph/） */
+  out?: string;
+  /** 并发扫描数（默认 8） */
+  concurrency?: number;
+  /** 强制全量重建，忽略缓存 */
+  fresh?: boolean;
+  /** 输出格式（默认 'both'） */
+  format?: 'json' | 'md' | 'both';
+  /** hub 文件入度阈值（默认 10） */
+  hubThreshold?: number;
+}
+
+export type GraphResult = {
+  /** 项目根目录 */
+  projectRoot: string;
+  /** 是否为 monorepo */
+  isMonorepo: boolean;
+  /** 子包列表（monorepo 场景，单包为空数组） */
+  packages: string[];
+  /** 输出目录绝对路径 */
+  outputPath: string;
+  /** 节点总数 */
+  nodeCount: number;
+  /** 边总数 */
+  edgeCount: number;
+  /** 循环依赖数量 */
+  cycleCount: number;
+  /** 执行耗时（毫秒） */
+  durationMs: number;
+};
+
 export interface ShieldEmitEvent {
   type: string;
   payload: Record<string, unknown>;

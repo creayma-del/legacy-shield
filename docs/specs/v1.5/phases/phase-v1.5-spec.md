@@ -5,7 +5,7 @@
 > 对应需求分解文档：[requirements-decomposition-v1.5.md](../requirements-decomposition-v1.5.md)
 > 对应设计文档：[design-v1.5.md](../design-v1.5.md)
 > 对应执行计划：[execution-plan-v1.5.md](../execution-plan-v1.5.md)
-> 状态：已通过（第 2 轮评审通过，2026-06-22）
+> 状态：已完成，已归档（冻结，不再修改）
 > 编制日期：2026-06-22
 > 评审记录：见本文档末尾 §7（轮次 1 修改后通过、轮次 2 通过）
 

@@ -6,8 +6,8 @@
 > 对应设计文档：[design-v1.5.md](../design-v1.5.md)
 > 对应执行计划：[execution-plan-v1.5.md](../execution-plan-v1.5.md)
 > 依赖任务：T1（lib/knowledge-graph/types.ts 类型定义）、T3（lib/knowledge-graph/collector.ts CollectedFile / CollectedDependency 类型与 collectDependencies 输出）
-> 状态：评审中（待评审）
-> 评审记录：见本文档末尾（轮次 1 待评审）
+> 状态：已完成，已归档（冻结，不再修改）
+> 评审记录：见本文档末尾
 
 ---
 
@@ -53,7 +53,7 @@
 >   GraphEdge,
 >   GraphStats,
 > } from './types.js';
-> import { basename, extname, relative, sep } from 'node:path';
+> import { extname, relative, sep } from 'node:path';
 > ```
 
 ### 3.2 实现 `buildGraph` 函数
@@ -68,9 +68,9 @@ export function buildGraph(
 ): KnowledgeGraph
 ```
 
-> **说明**：`resolver` 参数以接口形式声明（鸭子类型），不直接引用 T2 的 `ModuleResolver` 类类型，避免 T5 对 T2 产生硬依赖。T3 的 `collectDependencies` 已在收集阶段调用 `resolver.resolve` 完成 spec → 文件路径解析，`buildGraph` 阶段不再重复解析路径，仅消费 `CollectedFile.dependencies` 中已解析的结果。
+> **说明**：`resolver` 参数以接口形式声明（鸭子类型），不直接引用 T2 的 `ModuleResolver` 类类型，避免 T5 对 T2 产生硬依赖。
 >
-> 但 `CollectedDependency` 中的 `spec` 字段为原始 import 路径，`buildGraph` 需要将其解析为目标文件 id 才能建立边。因此 `buildGraph` 内部仍需调用 `resolver.resolve` 将 `dep.spec` 解析为文件 id。若 T3 已在 `collectDependencies` 内完成解析并将结果存入 `CollectedDependency`，则 `buildGraph` 直接消费；若 T3 仅保留原始 spec，则 `buildGraph` 负责解析。**以 T3 实际产出为准**：T3 的 `collectDependencies` 返回的 `CollectedDependency` 含 `unresolved: boolean` 字段但不含 resolved 路径字段，因此 `buildGraph` 需对 `unresolved === false` 的依赖调用 `resolver.resolve(dep.spec, filePath)` 获取目标文件 id。
+> **P2 修复说明（解析职责）**：T3 的 `collectDependencies` 在收集阶段调用 `resolver.resolve` 仅用于判定 `dep.unresolved` 标志，但未将解析后的目标文件路径存入 `CollectedDependency`。`CollectedDependency` 中仍只保留原始 `spec` 字段。因此 `buildGraph` 需对 `unresolved === false` 的依赖再次调用 `resolver.resolve(dep.spec, filePath)` 获取目标文件 id，以建立邻接表和边列表。这是设计文档 §4.1 的既定行为，存在少量重复解析的性能开销（已在 §5 风险表中记录）。
 
 **实现步骤**：
 
@@ -410,6 +410,8 @@ export function computeComponents(
 - **TC-G4 边列表**：`edges` 数组含一条 `{ from: 'a.ts', to: 'b.ts', kind: 'import', ... }` 边；未解析边（`unresolved: true`）仍纳入 edges。
 - **TC-G5 未解析边处理**：`collected` 含 `a.ts` 依赖 `lodash`（纯包名，resolver 返回 null），`edges` 含该边且 `unresolved: true`，但 `adjacency.get('a.ts')` 不包含 `lodash`（目标节点不在图中）。
 - **TC-G6 stats 骨架**：`stats.nodeCount` / `edgeCount` / `cycleCount` / `componentCount` / `unresolvedEdgeCount` 被正确填充；`hubCount` / `isolatedCount` / `entryCount` / `maxInDegree` / `maxOutDegree` 初始为 0（由 T6 填充）。
+- **TC-G7 空图构建**（P2 修复）：`collected = new Map()`，`buildGraph` 返回 `KnowledgeGraph`，`nodes.size === 0`、`edges.length === 0`、`cycles.length === 0`、`stats.nodeCount === 0`、`stats.componentCount === 0`，不抛异常。
+- **TC-G8 已解析边指向未扫描文件**（P2 修复）：`collected` 含 `a.ts` 依赖 `./outside`（resolver 返回 `/proj/outside.ts` 但 `/proj/outside.ts` 不在 collected 中），`edges` 含该边且 `unresolved === false`，但 `adjacency.get('a.ts')` 不包含 `/proj/outside.ts`；`stats.edgeCount` 包含该边，`stats.unresolvedEdgeCount` 不包含该边，`stats.componentCount` 不受该边影响。
 
 **`detectCycles` 测试用例**：
 
@@ -476,4 +478,4 @@ export function computeComponents(
 
 | 轮次 | 日期 | 结论 | P0/P1 问题 | 修复方案 |
 |---|---|---|---|---|
-| 1 | 待评审 | 待评审 | — | — |
+| 1 | 2026-06-22 | 修改后通过 | P2：未使用的 `basename` 导入将导致 `pnpm typecheck` 失败；P2：§3.2 关于 `buildGraph` 是否重复调用 `resolver.resolve` 的说明自相矛盾；P2：缺少 `buildGraph` 空输入测试用例；P2：缺少「已解析边指向未扫描文件」场景的测试用例 | P2：import 改为 `import { extname, relative, sep } from 'node:path';`，移除 `basename`；P2：重写 §3.2 说明，明确 T3 收集阶段仅用于判定 `unresolved`，`buildGraph` 需再次调用 `resolver.resolve` 获取目标文件 id；P2：新增 TC-G7「空图构建」；P2：新增 TC-G8「已解析边指向未扫描文件」 |

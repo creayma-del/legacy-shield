@@ -6,8 +6,8 @@
 > 对应设计文档：[design-v1.5.md](../design-v1.5.md)
 > 对应执行计划：[execution-plan-v1.5.md](../execution-plan-v1.5.md)
 > 依赖任务：T5（lib/knowledge-graph/graph.ts KnowledgeGraph 结构）、T6（lib/knowledge-graph/analyzer.ts analyzeGraph 填充 role / isEntry / stats 后的 KnowledgeGraph）
-> 状态：评审中（待评审）
-> 评审记录：见本文档末尾（轮次 1 待评审）
+> 状态：已完成，已归档（冻结，不再修改）
+> 评审记录：见本文档末尾（轮次 1 已通过）
 
 ---
 
@@ -102,7 +102,7 @@ export function toJson(graph: KnowledgeGraph): KnowledgeGraphJson
    }));
    ```
 
-   > **说明**：`nodes` 数组中每个元素的字段与 `GraphNode` 接口完全一致，按字母序排列（与设计文档 §2.3 schema 对齐）。`exports` 为字符串数组，直接输出。`packageName` 在单包场景为 `null`，monorepo 场景为子包名（由 T9 填充）。
+   > **说明**：`nodes` 数组中每个元素的字段与 `GraphNode` 接口完全一致，按设计文档 §2.3 schema 顺序排列（id / relativePath / kind / role / inDegree / outDegree / exports / isEntry / packageName）。`exports` 为字符串数组，直接输出。`packageName` 在单包场景为 `null`，monorepo 场景为子包名（由 T9 填充）。
 
 3. **以 edges 列表替代邻接表**：直接输出 `graph.edges` 数组，**不输出** `adjacency` / `reverseAdjacency`：
 
@@ -124,7 +124,7 @@ export function toJson(graph: KnowledgeGraph): KnowledgeGraphJson
    }));
    ```
 
-   > **关键设计（设计文档 §2.3 设计说明）**：JSON 输出以 `edges` 列表替代邻接表与反向索引，消费方可从 edges 列表重建邻接表（`edges.forEach(e => adjacency[e.from].push(e.to))`）。这样设计的原因是：
+   > **关键设计（设计文档 §2.3 设计说明）**：JSON 输出以 `edges` 列表替代邻接表与反向索引，消费方可从 edges 列表重建邻接表（`edges.filter(e => !e.unresolved).forEach(e => adjacency[e.from].push(e.to))`，需排除未解析边以与 `graph.adjacency` 一致）。这样设计的原因是：
    > - edges 列表更紧凑，避免了 Map 序列化问题；
    > - edges 列表更易于流式处理；
    > - 数据完整等价：邻接表与反向邻接表均可从 edges 列表重建。
@@ -220,11 +220,11 @@ export async function writeJson(
 **`toJson` 测试用例**：
 
 - **TC-J1 顶层字段完整性**：`toJson` 返回对象含 `meta` / `nodes` / `edges` / `cycles` / `stats` 五个顶层字段，无 `adjacency` / `reverseAdjacency` 字段。
-- **TC-J2 meta 字段**：`meta` 含 `projectRoot` / `isMonorepo` / `packages` / `generatedAt` / `nodeCount` / `edgeCount` / `cycleCount` 字段；`generatedAt` 为 ISO 8601 格式（正则 `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/`）。
+- **TC-J2 meta 字段**：`meta` 含 `projectRoot` / `isMonorepo` / `packages` / `generatedAt` / `nodeCount` / `edgeCount` / `cycleCount` 字段；`generatedAt` 为 ISO 8601 格式（正则 `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/`）。
 - **TC-J3 nodes 数组**：`nodes` 为数组，长度等于 `graph.nodes.size`；每个元素含 `id` / `relativePath` / `kind` / `role` / `inDegree` / `outDegree` / `exports` / `isEntry` / `packageName` 字段。
 - **TC-J4 edges 数组**：`edges` 为数组，长度等于 `graph.edges.length`；每个元素含 `from` / `to` / `kind` / `symbols` / `unresolved` / `rawSpec` 字段。
 - **TC-J5 edges 列表替代邻接表**：`toJson` 返回对象中**不含** `adjacency` / `reverseAdjacency` 字段（`JSON.stringify` 后的字符串中不含这两个字段名）。
-- **TC-J6 从 edges 重建邻接表**：`toJson` 返回的 `edges` 数组可通过 `edges.forEach(e => adjacency[e.from].push(e.to))` 重建邻接表，重建结果与 `graph.adjacency` 一致（仅含已解析边）。
+- **TC-J6 从 edges 重建邻接表**：`toJson` 返回的 `edges` 数组可通过 `edges.filter(e => !e.unresolved).forEach(e => adjacency[e.from].push(e.to))` 重建邻接表，重建结果与 `graph.adjacency` 一致（仅含已解析边）。
 - **TC-J7 cycles 输出**：`cycles` 为 `string[][]`，与 `graph.cycles` 一致。
 - **TC-J8 stats 输出**：`stats` 含 10 个字段（nodeCount / edgeCount / cycleCount / componentCount / hubCount / isolatedCount / entryCount / unresolvedEdgeCount / maxInDegree / maxOutDegree），与 `graph.stats` 一致。
 - **TC-J9 JSON 可序列化**：`JSON.stringify(toJson(graph))` 不抛异常（无循环引用、无 Map/Set 等不可序列化对象）。
@@ -288,4 +288,4 @@ export async function writeJson(
 
 | 轮次 | 日期 | 结论 | P0/P1 问题 | 修复方案 |
 |---|---|---|---|---|
-| 1 | 待评审 | 待评审 | — | — |
+| 1 | 2026-06-23 | 修改后通过 | P2：nodes 字段顺序描述为"按字母序排列"与设计文档 §2.3 schema 顺序不一致；edges 重建邻接表公式未排除未解析边（与 `graph.adjacency` 不一致）；TC-J2 generatedAt 正则未转义小数点（`.` 匹配任意字符） | P2：修正 nodes 字段顺序描述为"按设计文档 §2.3 schema 顺序排列"并列出字段顺序；edges 重建公式改为 `edges.filter(e => !e.unresolved).forEach(...)` 并同步修正 TC-J6；generatedAt 正则转义为 `\.\d{3}Z` |

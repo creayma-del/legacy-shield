@@ -1,0 +1,73 @@
+{
+  "version": "1",
+  "generatedAt": "2026-06-23T04:46:40.777Z",
+  "aliasHash": "32651d641bd99c8ce01a716a3a280462",
+  "entries": {
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/components/Header.vue": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/components/Header.vue",
+      "mtime": 1782185657875.734,
+      "aliasHash": "32651d641bd99c8ce01a716a3a280462",
+      "dependencies": [
+        {
+          "spec": "../utils/format",
+          "kind": "import",
+          "symbols": [
+            "format"
+          ],
+          "unresolved": false,
+          "line": 2
+        }
+      ],
+      "exports": [
+        "default"
+      ]
+    },
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/main.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/main.ts",
+      "mtime": 1782185621395.488,
+      "aliasHash": "32651d641bd99c8ce01a716a3a280462",
+      "dependencies": [
+        {
+          "spec": "./utils/format",
+          "kind": "import",
+          "symbols": [
+            "format"
+          ],
+          "unresolved": false,
+          "line": 1
+        },
+        {
+          "spec": "./components/Header.vue",
+          "kind": "import",
+          "symbols": [
+            "Header"
+          ],
+          "unresolved": false,
+          "line": 2
+        }
+      ],
+      "exports": [
+        "main"
+      ]
+    },
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/utils/request.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/utils/request.ts",
+      "mtime": 1782185644907.548,
+      "aliasHash": "32651d641bd99c8ce01a716a3a280462",
+      "dependencies": [],
+      "exports": [
+        "request"
+      ]
+    },
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/utils/format.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/utils/format.ts",
+      "mtime": 1782190010776.999,
+      "aliasHash": "32651d641bd99c8ce01a716a3a280462",
+      "dependencies": [],
+      "exports": [
+        "format",
+        "newFunc"
+      ]
+    }
+  }
+}

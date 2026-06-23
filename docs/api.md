@@ -384,6 +384,107 @@ curl -s -X POST "$WEBHOOK_URL" -H "Content-Type: application/json" \
   -d "{\"msg\": \"$REPORT\"}"
 ```
 
+## graph 子命令
+
+`shield graph --project <path>` — 生成项目知识图谱。基于 Babel AST 静态分析 import / export / require / dynamic-import 依赖关系，输出文件级依赖图、循环依赖链、hub 文件、分层架构等关键信息，为 AI 智能体提供项目结构上下文。
+
+### 参数定义
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|---|---|---|---|---|
+| `--project <path>` | string | 是 | — | 目标项目根路径 |
+| `--out <path>` | string | 否 | `<project>/.legacy-shield/knowledge-graph/` | 输出目录 |
+| `--concurrency <n>` | integer | 否 | `8` | 并发扫描数，必须 >= 1 |
+| `--fresh` | boolean | 否 | `false` | 强制全量重建，忽略缓存 |
+| `--format <format>` | `json` / `md` / `both` | 否 | `both` | 输出格式 |
+| `--hub-threshold <n>` | integer | 否 | `10` | hub 文件入度阈值，必须 >= 0 |
+
+### 选项校验规则
+
+- `concurrency` 非整数或 < 1 时抛错（如 `--concurrency 0` / `--concurrency abc`）
+- `format` 非 `json` / `md` / `both` 时抛错（如 `--format xml`）
+- `hubThreshold` 非整数或 < 0 时抛错（如 `--hub-threshold -1`）
+
+### 输出文件
+
+- `knowledge-graph.json`：JSON 格式知识图谱（结构含 `meta` / `nodes` / `edges` / `cycles` / `stats` 五个顶层字段）
+- `architecture-summary.md`：Markdown 架构摘要（中文 6 章节结构：项目架构概览 / 模块依赖拓扑 / 关键节点识别 / 循环依赖分析 / 分层结构推断 / 架构健康度评估）
+- `.cache.json`：mtime 缓存（隐藏文件，用于增量更新）
+
+### 输出路径
+
+- 默认：`<project>/.legacy-shield/knowledge-graph/`
+- 自定义：通过 `--out <path>` 指定（相对路径基于 `--project` 解析）
+
+### 与 quality 子命令的关系
+
+完全独立，不自动集成。运行 `shield graph` 不触发 quality 流程，反之亦然。用户需手动运行 `shield graph` 生成知识图谱。
+
+### 示例命令
+
+```bash
+# 基本用法
+node ./dist/cli.js graph --project /path/to/project
+
+# 仅输出 JSON
+node ./dist/cli.js graph --project /path/to/project --format json
+
+# 强制全量重建
+node ./dist/cli.js graph --project /path/to/project --fresh
+
+# 自定义并发数与 hub 阈值
+node ./dist/cli.js graph --project /path/to/project --concurrency 16 --hub-threshold 5
+```
+
+### JSON 输出 Schema 说明
+
+`KnowledgeGraphJson` 顶层字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `meta` | object | 元数据（projectRoot / isMonorepo / packages / generatedAt / nodeCount / edgeCount / cycleCount） |
+| `nodes` | array | 节点列表（id / relativePath / kind / role / inDegree / outDegree / exports / isEntry / packageName） |
+| `edges` | array | 边列表（from / to / kind / symbols / unresolved / rawSpec） |
+| `cycles` | array | 循环依赖链列表（每条为文件 id 数组） |
+| `stats` | object | 统计指标（nodeCount / edgeCount / cycleCount / componentCount / hubCount / isolatedCount / entryCount / unresolvedEdgeCount / maxInDegree / maxOutDegree） |
+
+> `edges` 列表可重建邻接表：`edges.forEach(e => adjacency[e.from].push(e.to))`。设计上以 edges 列表替代邻接表与反向索引，更紧凑且易于流式处理。
+
+### 路径解析能力
+
+**支持的解析方式**：
+
+- 相对路径（`./foo` / `../bar`）
+- tsconfig/jsconfig paths alias（`@/*` / `~/*` 等自定义 paths）
+- node_modules 包（含 scoped 包，如 `@vue/compiler-sfc/foo`）
+- 扩展名补全（`.ts` / `.tsx` / `.js` / `.jsx` / `.vue`）
+- index 文件解析（`./utils` → `./utils/index.ts`）
+
+**不支持的场景**：
+
+- webpack `resolve.alias` 配置（需读取 `webpack.config.js`）
+- vite `resolve.alias` 配置（需读取 `vite.config.ts`）
+- 动态 `import()` 变量表达式（标记为 `unresolved: true` 边）
+- 变量 `require()` 路径解析（标记为 `unresolved: true` 边）
+
+### monorepo 支持
+
+**识别优先级**（按顺序尝试）：
+
+1. `package.json` 的 `workspaces` 字段（npm/yarn workspaces）
+2. `lerna.json` 的 `packages` 字段
+3. `pnpm-workspace.yaml` 的 `packages` 字段（简化解析，不引入 js-yaml 依赖）
+4. `packages/*` 目录约定（若存在 `packages/` 目录且其下每个子目录都有 `package.json`）
+
+**输出**：每个子包独立图谱 + 全局聚合图谱。
+
+**支持的跨包依赖协议**：
+
+- `workspace:*`（pnpm workspace 协议）
+- `link:./packages/foo`（link 协议）
+- `file:./packages/foo`（file 协议）
+- node_modules 软链接（pnpm 风格）
+
 ## 注意事项
 
 1. API 服务仅监听 `127.0.0.1`，不对外暴露，适合本地开发环境使用。

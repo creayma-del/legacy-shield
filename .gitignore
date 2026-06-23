@@ -8,3 +8,4 @@ node_modules/
 /playwright/.cache/
 /dist/
 tests/code-quality-generated/
+tests/knowledge-graph/fixtures/large-project/

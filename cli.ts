@@ -4,6 +4,7 @@ import { runShield } from './lib/cli/shield.js';
 import { runQuality } from './lib/cli/quality.js';
 import { runReport } from './lib/cli/report.js';
 import { runApi } from './lib/cli/api.js';
+import { runGraph } from './lib/cli/graph.js';
 import { today } from './lib/utils.js';
 
 const program = new Command();
@@ -120,6 +121,40 @@ program
       port,
       cors: opts.cors ?? false,
     });
+  });
+
+program
+  .command('graph')
+  .description('生成项目知识图谱')
+  .requiredOption('--project <path>', '目标项目根路径')
+  .option('--out <path>', '输出目录', '')
+  .option('--concurrency <n>', '并发扫描数', '8')
+  .option('--fresh', '强制全量重建，忽略缓存')
+  .option('--format <format>', '输出格式（json/md/both）', 'both')
+  .option('--hub-threshold <n>', 'hub 文件入度阈值', '10')
+  .action(async (opts) => {
+    const concurrency = Number(opts.concurrency);
+    if (!Number.isInteger(concurrency) || concurrency < 1) {
+      throw new Error(`非法并发数: ${opts.concurrency}，必须是 >= 1 的整数`);
+    }
+    if (!['json', 'md', 'both'].includes(opts.format)) {
+      throw new Error(`非法输出格式: ${opts.format}，仅支持 json/md/both`);
+    }
+    const hubThreshold = Number(opts.hubThreshold);
+    if (!Number.isInteger(hubThreshold) || hubThreshold < 0) {
+      throw new Error(`非法 hub 阈值: ${opts.hubThreshold}，必须是 >= 0 的整数`);
+    }
+    const result = await runGraph({
+      project: opts.project,
+      out: opts.out || undefined,
+      concurrency,
+      fresh: opts.fresh ?? false,
+      format: opts.format,
+      hubThreshold,
+    });
+    console.log(`知识图谱生成完成：${result.nodeCount} 节点、${result.edgeCount} 边、${result.cycleCount} 循环依赖`);
+    console.log(`输出路径：${result.outputPath}`);
+    console.log(`耗时：${result.durationMs}ms`);
   });
 
 program.parseAsync(process.argv).catch((err) => {

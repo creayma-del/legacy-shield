@@ -6,8 +6,8 @@
 > 对应设计文档：[design-v1.5.md](../design-v1.5.md)
 > 对应执行计划：[execution-plan-v1.5.md](../execution-plan-v1.5.md)
 > 依赖任务：T7（writeJson）、T8（writeMarkdown）、T9（detectMonorepo / generatePackageGraph / generateAggregateGraph）
-> 状态：评审中（待评审）
-> 评审记录：见本文档末尾（轮次 1 待评审）
+> 状态：已完成，已归档（冻结，不再修改）
+> 评审记录：见本文档末尾
 
 ---
 
@@ -43,12 +43,12 @@
 
 - 文件顶部 import 依赖：
   ```typescript
-  import { existsSync, mkdirSync } from 'node:fs';
+  import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
   import { join, resolve, isAbsolute } from 'node:path';
   import type { GraphOptions, GraphResult } from '../types.js';
   import type { KnowledgeGraph } from './types.js';
   import { ModuleResolver } from './resolver.js';
-  import { scanFilesConcurrent } from './scanner.js';
+  import { scanWithCache, computeAliasHash } from './scanner.js';
   import { buildGraph } from './graph.js';
   import { analyzeGraph, inferLayers } from './analyzer.js';
   import { writeJson } from './json-output.js';
@@ -56,6 +56,8 @@
   import { detectMonorepo, generatePackageGraph, generateAggregateGraph } from './monorepo.js';
   ```
 - `runKnowledgeGraph` 不直接依赖 `commander`，可被 CLI（T11）与测试独立调用。
+
+> **P2 修复说明（scanFilesConcurrent 参数不一致）**：原 import 为 `scanFilesConcurrent`，但 `runSinglePackageFlow` 需要缓存与增量更新能力（传入 `fresh` / `projectRoot` / `aliasHash`），应调用 T4 的 `scanWithCache` 而非 `scanFilesConcurrent`。`scanFilesConcurrent` 仅负责并发扫描无缓存逻辑，`scanWithCache` 封装了缓存读写与增量扫描。同时 import `computeAliasHash` 用于计算 alias 配置 hash。
 
 ### 3.2 实现 `runKnowledgeGraph` 函数
 
@@ -136,14 +138,14 @@ export async function runKnowledgeGraph(options: GraphOptions): Promise<GraphRes
       cycleCount: graph.stats.cycleCount,
       durationMs: Date.now() - startTime,
     };
-  } finally {
-    // durationMs 在 return 时已计算，finally 块仅用于资源清理（如有）
-    // 注意：durationMs 的计算在 return 语句中完成，确保覆盖正常与异常路径
+  } catch (err) {
+    // 异常路径：durationMs 不被返回，调用方通过 catch 处理错误
+    throw err;
   }
 }
 ```
 
-> **durationMs 计算说明**：`startTime` 在函数入口记录，`durationMs = Date.now() - startTime` 在 `return` 语句中计算。若函数在 `try` 块中抛异常，异常向上传播，`durationMs` 不被返回（调用方通过 catch 处理错误）。`finally` 块保留用于未来扩展资源清理逻辑。
+> **P2 修复说明（durationMs 注释）**：原代码使用 `try...finally` 结构，`finally` 块注释称"durationMs 在 return 语句中计算"，但 `finally` 块实际不参与 `durationMs` 计算，注释误导。改为 `try...catch` 结构：正常路径在 `try` 块末尾 `return` 时计算 `durationMs`；异常路径 `throw err` 向上传播，`durationMs` 不被返回。移除无实际作用的 `finally` 块。
 
 ### 3.4 单包流程
 
@@ -160,10 +162,11 @@ async function runSinglePackageFlow(
 **实现步骤**：
 1. 读取目标项目根目录的 `tsconfig.json` / `jsconfig.json`，构造 `ModuleResolver`（T2）。
 2. 收集 `src/` 目录下的所有 JS/JSX/TS/TSX/Vue 文件路径。
-3. 调用 `scanFilesConcurrent`（T4）扫描文件，返回 `Map<string, CollectedFile>`，传入 `options.fresh` 控制缓存行为。
-4. 调用 `buildGraph`（T5）构建 `KnowledgeGraph`。
-5. 调用 `analyzeGraph`（T6）填充 role / isEntry / stats。
-6. 返回 `KnowledgeGraph`。
+3. 计算 `aliasHash`（基于 tsconfig/jsconfig 的 `compilerOptions.paths` 与 `compilerOptions.baseUrl`）。
+4. 调用 `scanWithCache`（T4）扫描文件（支持 mtime 缓存与增量更新），返回 `Map<string, CollectedFile>`，传入 `options.fresh` 控制缓存行为。
+5. 调用 `buildGraph`（T5）构建 `KnowledgeGraph`。
+6. 调用 `analyzeGraph`（T6）填充 role / isEntry / stats。
+7. 返回 `KnowledgeGraph`。
 
 ```typescript
 async function runSinglePackageFlow(
@@ -172,27 +175,38 @@ async function runSinglePackageFlow(
   hubThreshold: number,
   concurrency: number,
 ): Promise<KnowledgeGraph> {
-  // 1. 构造 resolver
+  // 1. 构造 resolver（createResolver 内部读取 tsconfig/jsconfig）
   const resolver = createResolver(projectRoot);
 
   // 2. 收集 src/ 下的文件
   const srcDir = join(projectRoot, 'src');
   const filePaths = collectSourceFiles(srcDir);
 
-  // 3. 并发扫描
-  const collected = await scanFilesConcurrent(filePaths, resolver, concurrency, options.fresh ?? false, projectRoot);
+  // 3. 计算 aliasHash（读取 tsconfig/jsconfig 对象）
+  const tsconfig = readTsconfig(projectRoot);
+  const aliasHash = computeAliasHash(tsconfig);
 
-  // 4. 构建图
+  // 4. 带缓存的并发扫描（scanWithCache 封装 mtime 缓存与增量更新逻辑）
+  const collected = await scanWithCache(
+    filePaths,
+    resolver,
+    concurrency,
+    projectRoot,
+    aliasHash,
+    options.fresh ?? false,
+  );
+
+  // 5. 构建图
   let graph = buildGraph(projectRoot, collected, resolver);
 
-  // 5. 分析图（填充 role / isEntry / stats）
+  // 6. 分析图（填充 role / isEntry / stats）
   graph = analyzeGraph(graph, hubThreshold);
 
   return graph;
 }
 ```
 
-> **注意**：`scanFilesConcurrent` 的 `fresh` 参数与 `projectRoot` 参数用于 mtime 缓存的读写（T4 实现）。本任务仅负责将 `options.fresh` 透传至 `scanFilesConcurrent`。
+> **注意**：`scanWithCache` 的 `fresh` 参数与 `projectRoot` / `aliasHash` 参数用于 mtime 缓存的读写（T4 实现）。本任务仅负责将 `options.fresh` 透传至 `scanWithCache`。`readTsconfig(projectRoot)` 为辅助函数，读取 tsconfig.json / jsconfig.json 并返回解析后的对象（或 null），供 `computeAliasHash` 使用。
 
 ### 3.5 monorepo 流程
 
@@ -208,10 +222,9 @@ async function runMonorepoFlow(
 ```
 
 **实现步骤**：
-1. 对每个子包调用 `generatePackageGraph`（T9）生成独立图谱。
-2. 调用 `generateAggregateGraph`（T9）合并为聚合图谱。
-3. 对聚合图谱调用 `analyzeGraph`（T6）重新计算统计指标。
-4. 返回聚合 `KnowledgeGraph`。
+1. 对每个子包 `await` 调用 `generatePackageGraph`（T9，async 函数）生成独立图谱。
+2. 调用 `generateAggregateGraph`（T9）合并为聚合图谱，传入 `hubThreshold` 参数。
+3. 返回聚合 `KnowledgeGraph`（`generateAggregateGraph` 内部已调用 `analyzeGraph` 重新计算统计指标，T10 不再重复调用）。
 
 ```typescript
 async function runMonorepoFlow(
@@ -221,7 +234,7 @@ async function runMonorepoFlow(
   hubThreshold: number,
   concurrency: number,
 ): Promise<KnowledgeGraph> {
-  // 1. 为每个子包生成独立图谱
+  // 1. 为每个子包生成独立图谱（generatePackageGraph 为 async，需 await）
   const packageGraphs: KnowledgeGraph[] = [];
   for (const packageRoot of packages) {
     const packageOptions: GraphOptions = {
@@ -230,22 +243,20 @@ async function runMonorepoFlow(
       concurrency,
       hubThreshold,
     };
-    const packageGraph = generatePackageGraph(packageRoot, packageOptions);
+    const packageGraph = await generatePackageGraph(packageRoot, packageOptions);
     packageGraphs.push(packageGraph);
   }
 
-  // 2. 合并为聚合图谱
-  let aggregateGraph = generateAggregateGraph(packageGraphs, projectRoot);
+  // 2. 合并为聚合图谱（generateAggregateGraph 内部已调用 analyzeGraph 重新计算统计指标）
+  //    传入 hubThreshold，确保与单包流程使用相同阈值
+  const aggregateGraph = generateAggregateGraph(packageGraphs, projectRoot, hubThreshold);
 
-  // 3. 对聚合图谱重新计算统计指标
-  aggregateGraph = analyzeGraph(aggregateGraph, hubThreshold);
-
-  // 4. 返回聚合图谱（inferLayers 在主流程中调用）
+  // 3. 返回聚合图谱（inferLayers 在主流程中调用，不再重复调用 analyzeGraph）
   return aggregateGraph;
 }
 ```
 
-> **关键点**：monorepo 流程中 `inferLayers` 在主流程（§3.3 第 3 步）统一调用，对聚合图谱生成分层结构，供 T8 `writeMarkdown` 使用。这是执行计划第 2 轮评审的 P1 修复项——确保 monorepo 流程不遗漏 `inferLayers` 调用。
+> **P1 修复说明（analyzeGraph 重复调用）**：原 `runMonorepoFlow` 在步骤 3 重复调用 `analyzeGraph`，但 T9 的 `generateAggregateGraph` 内部已调用 `analyzeGraph` 重新计算统计指标（含 `hubThreshold` 参数）。T10 不再重复调用，避免二次覆盖。`inferLayers` 在主流程（§3.3 第 3 步）统一调用，对聚合图谱生成分层结构。
 
 ### 3.6 辅助函数
 
@@ -315,12 +326,12 @@ function collectSourceFiles(srcDir: string): string[] {
 
 ### 3.7 import 依赖完整清单
 
-文件顶部需补充以下 import（§3.1 中未列出的辅助函数依赖）：
+> **P2 修复说明**：原 §3.1 的 import 缺少 `readFileSync` / `readdirSync` / `statSync`（`createResolver` / `collectSourceFiles` / `readTsconfig` 辅助函数依赖），已在 §3.1 中补全。本节不再单独列出，以 §3.1 的 import 为准。
 
-```typescript
-import { readFileSync, existsSync, readdirSync, statSync, mkdirSync } from 'node:fs';
-import { join, resolve, isAbsolute } from 'node:path';
-```
+§3.1 已包含完整的 import 依赖清单，包括：
+- `node:fs`：`existsSync` / `mkdirSync` / `readFileSync` / `readdirSync` / `statSync`
+- `node:path`：`join` / `resolve` / `isAbsolute`
+- 项目内部模块：`ModuleResolver` / `scanWithCache` / `computeAliasHash` / `buildGraph` / `analyzeGraph` / `inferLayers` / `writeJson` / `writeMarkdown` / `detectMonorepo` / `generatePackageGraph` / `generateAggregateGraph`
 
 ---
 
@@ -398,4 +409,4 @@ import { join, resolve, isAbsolute } from 'node:path';
 
 | 轮次 | 日期 | 结论 | P0/P1 问题 | 修复方案 |
 |---|---|---|---|---|
-| 1 | 待评审 | 待评审 | — | — |
+| 1 | 2026-06-22 | 修改后通过 | P1：`runMonorepoFlow` 重复调用 `analyzeGraph`（T9 的 `generateAggregateGraph` 已调用），且 `generatePackageGraph` 需 `await`（T9 已改为 async），`generateAggregateGraph` 需传入 `hubThreshold`；P2：`runSinglePackageFlow` 调用 `scanFilesConcurrent` 参数与 T4 签名不一致（应调用 `scanWithCache`）；P2：`durationMs` 的 `try...finally` 注释误导 | P1：`runMonorepoFlow` 移除重复 `analyzeGraph` 调用，`await generatePackageGraph`，`generateAggregateGraph` 传入 `hubThreshold`；P2：`runSinglePackageFlow` 改为调用 `scanWithCache`（含 `projectRoot` / `aliasHash` / `fresh` 参数），import 改为 `scanWithCache` + `computeAliasHash`；P2：`try...finally` 改为 `try...catch`，移除误导注释 |

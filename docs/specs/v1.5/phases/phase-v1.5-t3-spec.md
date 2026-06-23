@@ -6,8 +6,8 @@
 > 对应设计文档：[design-v1.5.md](../design-v1.5.md)
 > 对应执行计划：[execution-plan-v1.5.md](../execution-plan-v1.5.md)
 > 依赖任务：T1、T2
-> 状态：评审中（待评审）
-> 评审记录：见本文档末尾（轮次 1 待评审）
+> 状态：已完成，已归档（冻结，不再修改）
+> 评审记录：见本文档末尾
 
 ---
 
@@ -101,7 +101,7 @@
   }
   ```
 
-- **`parseFile` 函数实现**：
+- **`parseFile` 函数实现**（P2 修复：导出 `parseFile` 供 T12 单测直接调用）：
 
   ```typescript
   /**
@@ -110,7 +110,7 @@
    * @param code 文件内容
    * @returns { ast: File; isTs: boolean }
    */
-  function parseFile(filePath: string, code: string): { ast: File; isTs: boolean } {
+  export function parseFile(filePath: string, code: string): { ast: File; isTs: boolean } {
     const ext = extname(filePath);
 
     // .vue 文件先用 @vue/compiler-sfc 提取 script 内容再解析
@@ -145,9 +145,12 @@
       console.warn(`[collector] SFC 解析存在告警：${filePath}\n${errors.map((e: any) => e.message).join('\n')}`);
     }
 
-    const script = descriptor.scriptSetup ?? descriptor.script;
+    // P2 修复：与 scanner.ts 的 parseCode 顺序对齐——优先 script，其次 scriptSetup
+    const script = descriptor.script ?? descriptor.scriptSetup;
     const scriptContent = script?.content ?? '';
-    const isTs = script?.lang === 'ts' || script?.lang === 'tsx';
+    // isTs 判定与 scanner.ts 对齐：两个 script 块的 lang 都检查
+    const isTs = descriptor.script?.lang === 'ts' || descriptor.script?.lang === 'tsx'
+      || descriptor.scriptSetup?.lang === 'ts' || descriptor.scriptSetup?.lang === 'tsx';
 
     if (!scriptContent) {
       // 无 script 内容的 Vue 文件，返回空 AST（解析为空程序）
@@ -198,15 +201,11 @@
     const deps: CollectedDependency[] = [];
     const exports: string[] = [];
 
-    let ast: File;
-    try {
-      const result = parseFile(filePath, code);
-      ast = result.ast;
-    } catch (err) {
-      // Babel 解析失败（含 errorRecovery 仍无法处理的严重语法错误），返回空依赖
-      console.warn(`[collector] 解析失败: ${filePath}`, err instanceof Error ? err.message : String(err));
-      return { dependencies: [], exports: [] };
-    }
+    // P2 修复：移除 try-catch，异常隔离由 T4 scanner 层统一处理
+    // parseFile 启用 errorRecovery: true，大部分语法错误不抛异常
+    // 严重语法错误（errorRecovery 仍无法处理）向上传播到 T4 scanFilesConcurrent 的 try-catch
+    const result = parseFile(filePath, code);
+    const ast = result.ast;
 
     traverse(ast, {
       // import { foo } from './bar'
@@ -393,7 +392,7 @@
   - `.vue` 文件无 `<script>` 内容时返回空依赖 `{ dependencies: [], exports: [] }`。
 - **Babel 解析容错**：
   - 启用 `errorRecovery: true`，语法错误文件不抛异常（返回空依赖或部分依赖）；
-  - 严重语法错误（`errorRecovery` 仍无法处理）时 `parseFile` 抛异常被 `try-catch` 捕获，返回 `{ dependencies: [], exports: [] }`。
+  - 严重语法错误（`errorRecovery` 仍无法处理）时 `parseFile` 抛异常，由 T4 `scanFilesConcurrent` 的 try-catch 捕获，该文件在返回 Map 中对应 `{ dependencies: [], exports: [] }`。
 - **路径解析集成**：
   - `resolver.resolve` 返回非 `null` 时 `unresolved=false`；
   - `resolver.resolve` 返回 `null` 时 `unresolved=true`，`spec` 保留原始路径。
@@ -422,8 +421,8 @@
 |---|---|---|
 | 依赖 T1（CollectedFile / CollectedDependency 类型定义） | T1 未完成时无法定义接口 | T1 工作量低（1-2 人时），优先完成；T1 完成后可立即启动 T3 |
 | 依赖 T2（ModuleResolver 实例） | T2 未完成时无法进行路径解析 | T2 与 T1 可并行启动；T1 完成后可先基于类型定义编写 T3 的 visitor 骨架（用 mock resolver） |
-| Babel 解析容错性不足 | 语法错误文件抛异常中断扫描 | `parseFile` 启用 `errorRecovery: true`；`collectDependencies` 用 `try-catch` 包裹 `parseFile`，解析失败返回空依赖 |
-| Vue SFC `<script setup>` 提取不完整 | Vue 文件依赖收集遗漏 | 参考 `scanner.ts` 的 `parseCode` 实现思路，优先提取 `scriptSetup`，其次 `script`；无 script 内容时返回空依赖 |
+| Babel 解析容错性不足 | 语法错误文件抛异常中断扫描 | `parseFile` 启用 `errorRecovery: true`；严重语法错误向上传播到 T4 `scanFilesConcurrent` 的 try-catch，由 scanner 层统一异常隔离（返回空依赖） |
+| Vue SFC `<script setup>` 提取不完整 | Vue 文件依赖收集遗漏 | 与 `scanner.ts` 的 `parseCode` 顺序对齐：优先提取 `script`，其次 `scriptSetup`；无 script 内容时返回空依赖 |
 | `@babel/traverse` ESM 兼容性问题 | traverse 函数不可用 | 参考 `ast-skeleton.ts` 与 `scanner.ts` 的兜底取值：`((babelTraverseModule as any).default ?? babelTraverseModule) as any` |
 | re-export 与本地导出混淆 | exports 列表错误包含 re-export 符号 | `ExportNamedDeclaration` 有 `source` 时记录为 re-export 依赖（不计入 exports），无 `source` 时才收集本地导出符号 |
 | 不引入新的运行时依赖 | 复用现有 Babel 工具链 | 仅使用 `@babel/parser`、`@babel/traverse`、`@vue/compiler-sfc`，均为项目现有依赖 |
@@ -433,7 +432,7 @@
 ## 6. 变更范围
 
 - **本任务范围内**：
-  - `lib/knowledge-graph/collector.ts` 新增：`CollectedDependency` 接口、`CollectedFile` 接口、`parseFile` 函数（含 `pluginsFor` / `parseVueSFC` 辅助函数）、`collectDependencies` 函数。
+  - `lib/knowledge-graph/collector.ts` 新增：`CollectedDependency` 接口、`CollectedFile` 接口、`parseFile` 导出函数（含 `pluginsFor` / `parseVueSFC` 辅助函数）、`collectDependencies` 导出函数。
 - **不在本任务范围内**：
   - `lib/knowledge-graph/types.ts` 类型定义（由 T1 负责）；
   - `ModuleResolver` 类与 `createResolver` 工厂函数（由 T2 负责，本任务仅消费 `ModuleResolver` 实例）；
@@ -451,4 +450,4 @@
 
 | 轮次 | 日期 | 结论 | P0/P1 问题 | 修复方案 |
 |---|---|---|---|---|
-| 1 | 待评审 | 待评审 | — | — |
+| 1 | 2026-06-22 | 修改后通过 | P2：`parseVueSFC` script 提取顺序与 scanner.ts 不一致（优先 scriptSetup vs 优先 script）；P2：`parseFile` 未导出但测试计划含直接测试；P2：`collectDependencies` try-catch 偏离设计文档（异常隔离应由 T4 scanner 层统一处理） | P2：`parseVueSFC` 改为优先 `script` 其次 `scriptSetup`（与 scanner.ts 对齐），`isTs` 判定检查两个 script 块的 lang；P2：`parseFile` 添加 `export` 关键字导出；P2：移除 `collectDependencies` 中的 try-catch，异常向上传播到 T4 `scanFilesConcurrent` 的 try-catch 统一处理 |

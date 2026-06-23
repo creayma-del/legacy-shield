@@ -6,8 +6,8 @@
 > 对应设计文档：[design-v1.5.md](../design-v1.5.md)
 > 对应执行计划：[execution-plan-v1.5.md](../execution-plan-v1.5.md)
 > 依赖任务：T2、T3
-> 状态：评审中（待评审）
-> 评审记录：见本文档末尾（轮次 1 待评审）
+> 状态：已完成，已归档（冻结，不再修改）
+> 评审记录：见本文档末尾
 
 ---
 
@@ -229,6 +229,8 @@
 
     const results = new Map<string, CollectedFile>();
     const pendingFiles: string[] = [];
+    // P2 修复：缓存命中时复用已 stat 的 mtime，避免更新缓存时重复 stat
+    const mtimeCache = new Map<string, number>();
 
     if (cache && cache.aliasHash === aliasHash) {
       // 2. 缓存命中判断：aliasHash 一致时逐文件检查 mtime
@@ -238,13 +240,17 @@
           try {
             const currentMtime = statSync(filePath).mtimeMs;
             if (entry.mtime === currentMtime) {
-              // mtime 一一致，命中缓存，直接复用
+              // mtime 一致，命中缓存，直接复用
               results.set(filePath, {
                 dependencies: entry.dependencies,
                 exports: entry.exports,
               });
+              // 缓存命中时记录 mtime，避免更新缓存时重复 stat
+              mtimeCache.set(filePath, currentMtime);
               continue;
             }
+            // mtime 变更，记录新 mtime 供后续缓存更新使用
+            mtimeCache.set(filePath, currentMtime);
           } catch {
             // 文件不存在或 stat 失败，加入待扫描列表
           }
@@ -269,10 +275,12 @@
     }
 
     // 4. 更新并保存缓存
+    //    P2 修复：复用 mtimeCache 中已 stat 的 mtime，仅对未 stat 的文件 stat
     const newEntries: Record<string, CacheEntry> = {};
     for (const [filePath, collected] of results) {
       try {
-        const mtime = statSync(filePath).mtimeMs;
+        // 优先复用已 stat 的 mtime，避免重复 stat
+        const mtime = mtimeCache.get(filePath) ?? statSync(filePath).mtimeMs;
         newEntries[filePath] = {
           path: filePath,
           mtime,
@@ -401,4 +409,4 @@
 
 | 轮次 | 日期 | 结论 | P0/P1 问题 | 修复方案 |
 |---|---|---|---|---|
-| 1 | 待评审 | 待评审 | — | — |
+| 1 | 2026-06-22 | 修改后通过 | P2：`scanWithCache` 更新缓存时对所有文件重新 `statSync`（缓存命中文件已在前面 stat 过，性能浪费）；P2：评审记录格式偏离模板（"待评审"未填日期与结论） | P2：引入 `mtimeCache: Map<string, number>` 缓存已 stat 的 mtime，更新缓存时优先复用 `mtimeCache.get(filePath)`，仅对未 stat 的文件调用 `statSync`；P2：评审记录补全日期与结论，格式与其他任务 Spec 对齐 |

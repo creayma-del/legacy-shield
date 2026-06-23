@@ -6,8 +6,8 @@
 > 对应设计文档：[design-v1.5.md](../design-v1.5.md)
 > 对应执行计划：[execution-plan-v1.5.md](../execution-plan-v1.5.md)
 > 依赖任务：T6（lib/knowledge-graph/analyzer.ts analyzeGraph 填充 role / isEntry / stats 后的 KnowledgeGraph + inferLayers 产出的分层结构）
-> 状态：评审中（待评审）
-> 评审记录：见本文档末尾（轮次 1 待评审）
+> 状态：已完成，已归档（冻结，不再修改）
+> 评审记录：见本文档末尾（轮次 1 已通过）
 
 ---
 
@@ -41,7 +41,7 @@
 > 文件顶部 import：
 >
 > ```typescript
-> import type { KnowledgeGraph, GraphNode } from './types.js';
+> import type { KnowledgeGraph, GraphNode, NodeRole } from './types.js';
 > import { inferLayers } from './analyzer.js';
 > import { join, dirname, relative, sep } from 'node:path';
 > import { mkdir, writeFile } from 'node:fs/promises';
@@ -65,8 +65,11 @@ export type Layers = ReturnType<typeof inferLayers>;
 export function toMarkdown(
   graph: KnowledgeGraph,
   layers: Layers,
+  hubThreshold: number,
 ): string
 ```
+
+> **P1 修复说明（函数签名对齐）**：§3.3 的函数签名原为 `toMarkdown(graph, layers)`，缺少 `hubThreshold` 参数，与 §3.4 采用的方案 A（增加 `hubThreshold: number` 参数）不一致。已统一为含 `hubThreshold` 参数的签名，与执行计划 T10 调用方传入一致。
 
 **实现步骤**（严格遵循设计文档 §7.2 的 6 章节结构与样例）：
 
@@ -150,6 +153,14 @@ lines.push('');
 // 架构特征列表
 lines.push('**架构特征**：');
 lines.push(`- 框架：${framework}`);
+const stateMgmt = detectStateManagement(graph);
+if (stateMgmt) {
+  lines.push(`- 状态管理：${stateMgmt}`);
+}
+const router = detectRouter(graph);
+if (router) {
+  lines.push(`- 路由：${router}`);
+}
 lines.push(`- 入口文件：${graph.stats.entryCount} 个`);
 lines.push(`- Hub 文件：${graph.stats.hubCount} 个（被 ≥${hubThreshold} 个文件依赖）`);
 lines.push(`- 孤立文件：${graph.stats.isolatedCount} 个（未被任何文件引用）`);
@@ -158,6 +169,8 @@ lines.push('');
 
 > **说明**：
 > - `detectFramework(graph)`：通过节点 `kind` 字段检测框架特征。若存在 `.vue` 文件，检测为 "Vue 3"；若存在 `.ts` / `.tsx` 文件，检测为 "TypeScript"；组合为 "Vue 3 + TypeScript" 等。
+> - `detectStateManagement(graph)`：检测状态管理库。通过节点 `exports` 或 `relativePath` 关键词检测（如 `defineStore` → Pinia，`createStore` → Vuex），返回格式如 `"Pinia（检测到 8 个 store 文件）"`；未检测到时返回 `null`。
+> - `detectRouter(graph)`：检测路由库。通过节点 `exports` 或 `relativePath` 关键词检测（如 `createRouter` → Vue Router，`new Router` → Express Router），返回格式如 `"Vue Router（检测到 12 个路由文件）"`；未检测到时返回 `null`。
 > - `detectSourceDir(graph)`：从节点的 `relativePath` 中提取公共顶层目录（如 `src`）。
 > - `aggregateByDirectory(graph)`：按顶层目录聚合节点数与被依赖次数，用于核心模块描述。
 > - `hubThreshold` 参数由 `toMarkdown` 的调用方传入（或从 `graph` 上下文推导，见 §3.3.7）。
@@ -213,7 +226,7 @@ lines.push('');
 ```
 
 > **说明**：
-> - `aggregateByDirectoryDetailed(graph, layers)`：按顶层目录聚合，统计每个目录的文件数、被依赖次数（该目录所有节点的 inDegree 之和）、依赖外部次数（该目录所有节点的 outDegree 之和）、主导角色（该目录中数量最多的 role）。
+> - `aggregateByDirectoryDetailed(graph, layers)`：按顶层目录聚合，统计每个目录的文件数、被依赖次数（该目录所有节点的 inDegree 之和）、依赖外部次数（该目录所有节点的 outDegree 之和）、主导角色（该目录中数量最多的 role，通过 `mapRoleToChinese` 转换为中文名称）。
 > - `extractCoreChains(graph, layers)`：从入口层节点出发，沿邻接表深度优先遍历，提取 2-3 条典型依赖链（优先经过 core 层节点），每条链长度 3-5 个节点。
 
 #### 3.3.4 §3 关键节点识别
@@ -349,7 +362,7 @@ if (graph.cycles.length === 0) {
 ```markdown
 ## 5. 分层结构推断
 
-基于拓扑排序与入度/出度分析，项目可分为 4 层：
+基于拓扑排序与入度/出度分析，项目可分为 5 层：
 
 | 层级 | 文件数 | 说明 |
 |---|---|---|
@@ -365,7 +378,7 @@ if (graph.cycles.length === 0) {
 ```typescript
 lines.push('## 5. 分层结构推断');
 lines.push('');
-lines.push('基于拓扑排序与入度/出度分析，项目可分为 4 层：');
+lines.push('基于拓扑排序与入度/出度分析，项目可分为 5 层：');
 lines.push('');
 lines.push('| 层级 | 文件数 | 说明 |');
 lines.push('|---|---|---|');
@@ -475,9 +488,12 @@ return lines.join('\n');
 
 - `formatTimestamp(date: Date): string`：格式化为 `YYYY-MM-DD HH:mm:ss`。
 - `detectFramework(graph: KnowledgeGraph): string`：检测框架特征（Vue / TS / React 等）。
+- `detectStateManagement(graph: KnowledgeGraph): string | null`：检测状态管理库（Pinia / Vuex），返回格式如 `"Pinia（检测到 N 个 store 文件）"`；未检测到返回 `null`。
+- `detectRouter(graph: KnowledgeGraph): string | null`：检测路由库（Vue Router 等），返回格式如 `"Vue Router（检测到 N 个路由文件）"`；未检测到返回 `null`。
 - `detectSourceDir(graph: KnowledgeGraph): string`：检测源码目录（如 `src`）。
 - `aggregateByDirectory(graph: KnowledgeGraph): Record<string, { count: number }>`：按顶层目录聚合节点数。
 - `aggregateByDirectoryDetailed(graph: KnowledgeGraph, layers: Layers): Record<string, { count: number; dependedCount: number; dependCount: number; dominantRole: string }>`：按顶层目录聚合详细统计。
+- `mapRoleToChinese(role: NodeRole): string`：将 `NodeRole` 映射为中文名称（`entry` → `入口层`，`core` → `核心层`，`leaf` → `叶子层`，`isolated` → `孤立`，`unknown` → `中间层`），供 `aggregateByDirectoryDetailed` 的 `dominantRole` 字段使用。
 - `extractCoreChains(graph: KnowledgeGraph, layers: Layers): string[][]`：提取核心依赖链。
 - `inferNodeDescription(node: GraphNode): string`：推断节点说明文字。
 - `inferCycleSuggestion(cycle: string[], graph: KnowledgeGraph): string`：推断循环依赖拆解建议。
@@ -558,7 +574,9 @@ export async function writeMarkdown(
 - **TC-M8 §5 分层结构推断**：含分层表（3 列：层级 / 文件数 / 说明），5 行（入口层 / 核心层 / 中间层 / 叶子层 / 孤立），文件数总和等于节点数。
 - **TC-M9 §6 架构健康度评估**：含指标表（3 列：指标 / 值 / 评估），6 行（循环依赖密度 / Hub 占比 / 孤立占比 / 平均入度 / 平均出度 / 最大入度）+ 总体评估文字。
 - **TC-M10 AI 优化格式**：返回字符串为结构化表格 + 判断性文字（非纯数据堆砌），含 Markdown 表格语法（`|---|`）与加粗（`**`）。
-- **TC-M11 空图**：`graph.nodes` 为空 Map 时，`toMarkdown` 不抛异常，各章节含"0"或"无"的描述。
+- **TC-M11 空图**：`graph.nodes` 为空 Map、`layers` 各数组均为空时，`toMarkdown` 不抛异常；文件头节点数/边数/循环/孤立均为 `0`；§1 架构概览含"共 0 个文件"、架构特征列表各计数为 `0`、框架检测为"未知"；§2 顶层目录表与核心依赖链为空；§3 Hub 文件表与孤立文件表为空（仅表头）；§4 输出"未检测到循环依赖"；§5 分层表各层文件数为 `0`；§6 健康度评估各指标为 `0`或"无"。
+
+> **空图防御性处理说明**：`detectFramework` 在无节点时返回 `'未知'`；`detectSourceDir` 在无节点时返回 `'.'`；`detectStateManagement` / `detectRouter` 在无节点时返回 `null`（不输出对应行）；`aggregateByDirectory` / `aggregateByDirectoryDetailed` 在无节点时返回空对象（表格仅输出表头）；`extractCoreChains` 在无入口节点时返回空数组（核心依赖链部分输出"无典型依赖链"）；`Array.from(graph.nodes.values()).reduce(...)` 已提供初始值 `{ inDegree: 0, relativePath: '', outDegree: 0 }`，空图时不抛异常。
 - **TC-M12 hubThreshold 传入**：`toMarkdown(graph, layers, 5)` 后，Hub 文件表标题含"≥5"，分层表核心层说明含"入度≥5"。
 
 **`writeMarkdown` 测试用例**：
@@ -619,4 +637,4 @@ export async function writeMarkdown(
 
 | 轮次 | 日期 | 结论 | P0/P1 问题 | 修复方案 |
 |---|---|---|---|---|
-| 1 | 待评审 | 待评审 | — | — |
+| 1 | 2026-06-23 | 修改后通过 | P1：§3.3 函数签名 `toMarkdown(graph, layers)` 缺少 `hubThreshold` 参数，与 §3.4 方案 A 不一致；P2：§3.3.6 样例与实现均写"4 层"但表格含 5 行（含孤立）；§1 架构特征列表缺少状态管理/路由检测行（与样例不一致）；`aggregateByDirectoryDetailed` 的 `dominantRole` 缺少 `NodeRole` → 中文名称映射函数；TC-M11 空图测试缺少具体断言与防御性处理说明 | P1：§3.3 函数签名统一为 `toMarkdown(graph, layers, hubThreshold)` 并补充修复说明；P2：样例与实现文案改为"5 层"；架构特征列表增加 `detectStateManagement` / `detectRouter` 调用与说明；辅助函数清单增加 `mapRoleToChinese` 函数并补充 `NodeRole` import；TC-M11 补充各章节空图断言与防御性处理说明 |

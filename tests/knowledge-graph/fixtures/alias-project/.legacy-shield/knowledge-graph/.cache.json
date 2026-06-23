@@ -1,0 +1,35 @@
+{
+  "version": "1",
+  "generatedAt": "2026-06-23T04:46:40.769Z",
+  "aliasHash": "c0cbf7302c3713cc8029a524526186c3",
+  "entries": {
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/alias-project/src/utils/helper.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/alias-project/src/utils/helper.ts",
+      "mtime": 1782185735313.8252,
+      "aliasHash": "c0cbf7302c3713cc8029a524526186c3",
+      "dependencies": [],
+      "exports": [
+        "helper"
+      ]
+    },
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/alias-project/src/main.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/alias-project/src/main.ts",
+      "mtime": 1782185725672.894,
+      "aliasHash": "c0cbf7302c3713cc8029a524526186c3",
+      "dependencies": [
+        {
+          "spec": "@/utils/helper",
+          "kind": "import",
+          "symbols": [
+            "helper"
+          ],
+          "unresolved": false,
+          "line": 1
+        }
+      ],
+      "exports": [
+        "main"
+      ]
+    }
+  }
+}
