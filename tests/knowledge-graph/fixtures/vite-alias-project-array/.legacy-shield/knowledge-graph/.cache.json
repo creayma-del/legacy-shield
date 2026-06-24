@@ -1,0 +1,35 @@
+{
+  "version": "1",
+  "generatedAt": "2026-06-24T02:11:39.098Z",
+  "aliasHash": "15ffab9d661eb2c26bcc5527bc7b2920",
+  "entries": {
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/vite-alias-project-array/src/components/Button.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/vite-alias-project-array/src/components/Button.ts",
+      "mtime": 1782264651095.8022,
+      "aliasHash": "15ffab9d661eb2c26bcc5527bc7b2920",
+      "dependencies": [],
+      "exports": [
+        "Button"
+      ]
+    },
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/vite-alias-project-array/src/main.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/vite-alias-project-array/src/main.ts",
+      "mtime": 1782264656870.0903,
+      "aliasHash": "15ffab9d661eb2c26bcc5527bc7b2920",
+      "dependencies": [
+        {
+          "spec": "@/components/Button",
+          "kind": "import",
+          "symbols": [
+            "Button"
+          ],
+          "unresolved": false,
+          "line": 1
+        }
+      ],
+      "exports": [
+        "main"
+      ]
+    }
+  }
+}

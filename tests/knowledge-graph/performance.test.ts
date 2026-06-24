@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runKnowledgeGraph } from '../../lib/knowledge-graph/index.js';
+import { loadAliasConfig } from '../../lib/knowledge-graph/config-loader.js';
 import type { GraphOptions } from '../../lib/types.js';
 import { generateLargeProject } from './fixtures/generate-large-project.js';
 
@@ -93,5 +95,43 @@ describe('performance baseline (5000 files)', () => {
     expect(Object.keys(cache.entries).length).toBeGreaterThan(4000);
 
     console.log(`[TC-PERF-3] 缓存条目数：${Object.keys(cache.entries).length}`);
+  });
+});
+
+// T8: 配置解析性能测试
+describe('config parsing performance', () => {
+  it('TC-PERF-4: 单次 loadAliasConfig 解析 < 500ms（单来源 + 三来源）', () => {
+    // 1. 单来源：webpack-alias-project 夹具
+    const webpackFixture = join(__dirname, 'fixtures/webpack-alias-project');
+    const start1 = Date.now();
+    loadAliasConfig(webpackFixture);
+    const elapsed1 = Date.now() - start1;
+    expect(elapsed1).toBeLessThan(500);
+    console.log(`[TC-PERF-4] 单来源（webpack）配置解析耗时：${elapsed1}ms`);
+
+    // 2. 三来源：临时目录（tsconfig + vite + webpack）
+    const tempDir = mkdtempSync(join(tmpdir(), 'perf-config-'));
+    mkdirSync(join(tempDir, 'src', 'utils'), { recursive: true });
+    writeFileSync(join(tempDir, 'src', 'utils', 'helper.ts'), 'export const helper = 1;');
+    writeFileSync(
+      join(tempDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@/*': ['src/*'] } } }),
+    );
+    writeFileSync(
+      join(tempDir, 'vite.config.ts'),
+      `import path from 'node:path';\nexport default { resolve: { alias: { '@': path.resolve(__dirname, 'src') } } };`,
+    );
+    writeFileSync(
+      join(tempDir, 'webpack.config.js'),
+      `const path = require('path');\nmodule.exports = { resolve: { alias: { '@': path.resolve(__dirname, 'src') } } };`,
+    );
+
+    const start2 = Date.now();
+    loadAliasConfig(tempDir);
+    const elapsed2 = Date.now() - start2;
+    expect(elapsed2).toBeLessThan(500);
+    console.log(`[TC-PERF-4] 三来源（tsconfig + vite + webpack）配置解析耗时：${elapsed2}ms`);
+
+    rmSync(tempDir, { recursive: true, force: true });
   });
 });

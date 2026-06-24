@@ -1,31 +1,12 @@
 {
   "version": "1",
-  "generatedAt": "2026-06-23T04:46:40.774Z",
-  "aliasHash": "none",
+  "generatedAt": "2026-06-24T02:11:38.996Z",
+  "aliasHash": "7b4eea9955c6462f0921097dc7e06d15",
   "entries": {
-    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/a.ts": {
-      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/a.ts",
-      "mtime": 1782185748309.9636,
-      "aliasHash": "none",
-      "dependencies": [
-        {
-          "spec": "./b",
-          "kind": "import",
-          "symbols": [
-            "b"
-          ],
-          "unresolved": false,
-          "line": 1
-        }
-      ],
-      "exports": [
-        "a"
-      ]
-    },
     "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/b.ts": {
       "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/b.ts",
       "mtime": 1782185755088.9045,
-      "aliasHash": "none",
+      "aliasHash": "7b4eea9955c6462f0921097dc7e06d15",
       "dependencies": [
         {
           "spec": "./a",
@@ -41,29 +22,29 @@
         "b"
       ]
     },
-    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/c.ts": {
-      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/c.ts",
-      "mtime": 1782185760973.517,
-      "aliasHash": "none",
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/a.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/a.ts",
+      "mtime": 1782185748309.9636,
+      "aliasHash": "7b4eea9955c6462f0921097dc7e06d15",
       "dependencies": [
         {
-          "spec": "./d",
+          "spec": "./b",
           "kind": "import",
           "symbols": [
-            "d"
+            "b"
           ],
           "unresolved": false,
           "line": 1
         }
       ],
       "exports": [
-        "c"
+        "a"
       ]
     },
     "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/d.ts": {
       "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/d.ts",
       "mtime": 1782185768117.803,
-      "aliasHash": "none",
+      "aliasHash": "7b4eea9955c6462f0921097dc7e06d15",
       "dependencies": [
         {
           "spec": "./e",
@@ -79,10 +60,29 @@
         "d"
       ]
     },
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/c.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/c.ts",
+      "mtime": 1782185760973.517,
+      "aliasHash": "7b4eea9955c6462f0921097dc7e06d15",
+      "dependencies": [
+        {
+          "spec": "./d",
+          "kind": "import",
+          "symbols": [
+            "d"
+          ],
+          "unresolved": false,
+          "line": 1
+        }
+      ],
+      "exports": [
+        "c"
+      ]
+    },
     "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/e.ts": {
       "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/cycle-project/src/e.ts",
       "mtime": 1782185774063.9604,
-      "aliasHash": "none",
+      "aliasHash": "7b4eea9955c6462f0921097dc7e06d15",
       "dependencies": [
         {
           "spec": "./c",

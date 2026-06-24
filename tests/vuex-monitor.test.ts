@@ -204,10 +204,10 @@ describeIfChromium('vuex monitor', () => {
 
   // TC-8 / TC-8a1：Vuex 4 strict 模式通过 store._withCommit 内部 watch state，违规由
   // watcher 异步抛错触发；这条抛错路径不会传播回 store.commit 同步包装层。
-  // 因此 inject.iife.ts 当前 commit 包装路径在直接修改 state（非 mutation 内）的场景下
-  // 无法捕获到 strict 违规。
-  // 此处保留断言代码作为后续 T7 联调（由 Vue errorHandler 协同识别）依据。
-  it.skip('TC-8: strict violation by mutating state outside mutation - skipped (待 T7 errorHandler 协同识别)', async () => {
+  // v1.6 已通过 errorHandler 协同补强：patchErrorHandler 中先调用业务 handler，
+  // 再调用 tryEmitVuexStrictViolation 识别 strict 违规消息并关联 strict store，
+  // emit vuex-strict-violation（source: 'vuex-strict-errorhandler'）。
+  it('TC-8: strict violation by mutating state outside mutation', async () => {
     const logs = await runFixture('vue-vuex-strict.html', async (page) => {
       await page.click('#trigger-strict');
       await page.waitForTimeout(1500);
@@ -218,7 +218,7 @@ describeIfChromium('vuex monitor', () => {
     expect(first.level).toBe('error');
   });
 
-  it.skip('TC-8a1: strict violation after legal mutation provides non-empty mutatedKeyPath - skipped (依赖 TC-8 通路)', async () => {
+  it('TC-8a1: strict violation after legal mutation provides non-empty mutatedKeyPath', async () => {
     const logs = await runFixture('vue-vuex-strict.html', async (page) => {
       await page.click('#trigger-strict-after-mutation');
       await page.waitForTimeout(1500);
@@ -242,5 +242,38 @@ describeIfChromium('vuex monitor', () => {
     });
     const strictViolations = logs.filter((l) => l.subType === 'vuex-strict-violation');
     expect(strictViolations.length).toBe(0);
+  });
+
+  // TC-RES-22：PATCH-T2 直接 watcher 异常路径验证
+  // store.strict !== true 时不注册 watcher，state 直接修改不产生 vuex-strict-violation，
+  // 但 dispatch/commit 监控仍正常工作。
+  it('TC-RES-22: non-strict store 不注册 watcher，state 直接修改不产生 vuex-strict-violation', async () => {
+    const logs = await runFixture('vue-vuex-error.html', async (page) => {
+      // 1. 验证 store.strict !== true 并直接修改 state（outside mutation handler）
+      const strictValue = await page.evaluate(() => {
+        const el = document.querySelector('#app') as Element & { __vue_app__?: unknown };
+        const app = el.__vue_app__ as {
+          config: { globalProperties: { $store: { strict: unknown; state: Record<string, Record<string, unknown>> } } };
+        };
+        const store = app.config.globalProperties.$store;
+        // 直接修改 state（outside mutation handler）
+        store.state.user.name = 'hacked';
+        return store.strict;
+      });
+      expect(strictValue).not.toBe(true);
+      await page.waitForTimeout(500);
+
+      // 2. 触发 dispatch error，验证 vuex-error 监控仍正常工作
+      await page.click('#trigger-action-sync');
+      await page.waitForTimeout(500);
+    });
+
+    // 不应产生 vuex-strict-violation（store.strict !== true → watcher 未注册）
+    const strictViolations = logs.filter((l) => l.subType === 'vuex-strict-violation');
+    expect(strictViolations.length).toBe(0);
+
+    // 应产生 vuex-error（dispatch/commit 监控不受影响）
+    const vuexErrors = logs.filter((l) => l.subType === 'vuex-error');
+    expect(vuexErrors.length).toBeGreaterThan(0);
   });
 });

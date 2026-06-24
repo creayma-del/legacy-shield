@@ -161,14 +161,12 @@ node ./dist/cli.js graph --project /Users/creayma/work/sichuan/event --concurren
 
 **与 quality 子命令的关系**：完全独立，不自动集成。运行 `shield graph` 不触发 quality 流程，反之亦然。
 
-**支持的路径解析**：相对路径、tsconfig/jsconfig paths alias（`@/*` 等）、node_modules 包（含 scoped 包）、扩展名补全（`.ts` / `.tsx` / `.js` / `.jsx` / `.vue`）、index 文件解析。
+**支持的路径解析**：相对路径、tsconfig/jsconfig paths alias（`@/*` 等）、webpack `resolve.alias`（对象格式，含 webpack 5 对象形态）、vite `resolve.alias`（对象格式 + 数组格式）、node_modules 包（含 scoped 包）、扩展名补全（`.ts` / `.tsx` / `.js` / `.jsx` / `.vue`）、index 文件解析。alias 优先级：tsconfig paths > vite alias > webpack alias（自动检测 `webpack.config.{js,ts}` / `vite.config.{ts,js}`，无需新增 CLI 参数）。
 
 **monorepo 支持**：自动识别 `package.json` workspaces → `lerna.json` → `pnpm-workspace.yaml`（简化解析）→ `packages/*` 目录约定（4 级优先级），为每个子包生成独立图谱 + 全局聚合图谱。支持 `workspace:*` / `link:` / `file:` / node_modules 软链接跨包依赖协议。
 
 **不支持的场景**（明确说明）：
 
-- webpack `resolve.alias` 配置（需读取 `webpack.config.js`）
-- vite `resolve.alias` 配置（需读取 `vite.config.ts`）
 - 动态 `import()` 变量表达式的解析（标记为 unresolved 边）
 - 变量 `require()` 路径解析（标记为 unresolved 边）
 
@@ -181,9 +179,9 @@ node ./dist/cli.js graph --project /Users/creayma/work/sichuan/event --concurren
 - **Vue 3**：完整支持运行时渲染错误（`vue-render-error`）、运行时警告（`vue-warn`）以及 Vue Router 4 导航错误（`vue-router-error`），包括守卫抛错与异步路由组件加载失败。
 - **Pinia 2.x / Vuex 4（v1.4 新增）**：`shield` 自动识别业务系统注册的 Pinia 与 Vuex 实例并完成零侵入 patch，结构化采集 store 错误：
   - `pinia-error`：Pinia action 同步 / 异步抛错，含 `appId`、`storeId`、`actionName`、`args`（脱敏）、`stateKeys` / `stateSizeBytes` / `stateTruncated` 等上下文；
-  - `pinia-plugin-error`：Pinia 插件 install 阶段抛错，含 `appId`、`pluginName?`；
+  - `pinia-plugin-error`：Pinia 插件 install 阶段抛错（v1.6 增强：遍历 `pinia._p` 数组包装 plugin，捕获 install 阶段异步抛错），含 `appId`、`pluginName?`；
   - `vuex-error`：Vuex action / mutation / subscribe / subscribeAction 抛错，含 `appId`、`modulePath`、`type`、`payload`（脱敏）、`stage`、state 摘要等；
-  - `vuex-strict-violation`：基于 Vuex 4 内部结构特征识别 strict mode 违规修改，含 `appId`、`modulePath`、`mutatedKeyPath?`、state 摘要，不依赖 console 文本解析。
+  - `vuex-strict-violation`：基于 Vuex 4 内部结构特征识别 strict mode 违规修改（v1.6 PATCH-T2：通过 `Vue.watch` 自建 watcher 直接检测 `_committing === false` 并 emit，不依赖 errorHandler 协同与 console 文本解析），含 `appId`、`modulePath`、`mutatedKeyPath?`、state 摘要。
 
   payload / args / state 均经 `--redact-body-fields` 端到端脱敏，state 仅记录 keys 与体积，不落盘完整值。运行时日志样例：
 

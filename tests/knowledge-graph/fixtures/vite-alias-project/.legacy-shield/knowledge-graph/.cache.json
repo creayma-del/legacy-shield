@@ -1,0 +1,35 @@
+{
+  "version": "1",
+  "generatedAt": "2026-06-24T02:11:39.085Z",
+  "aliasHash": "2ddf8c2f5fec23d9fb6d715f650e2b2b",
+  "entries": {
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/vite-alias-project/src/utils/helper.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/vite-alias-project/src/utils/helper.ts",
+      "mtime": 1782264622485.6035,
+      "aliasHash": "2ddf8c2f5fec23d9fb6d715f650e2b2b",
+      "dependencies": [],
+      "exports": [
+        "helper"
+      ]
+    },
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/vite-alias-project/src/main.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/vite-alias-project/src/main.ts",
+      "mtime": 1782264627866.0752,
+      "aliasHash": "2ddf8c2f5fec23d9fb6d715f650e2b2b",
+      "dependencies": [
+        {
+          "spec": "@/utils/helper",
+          "kind": "import",
+          "symbols": [
+            "helper"
+          ],
+          "unresolved": false,
+          "line": 1
+        }
+      ],
+      "exports": [
+        "main"
+      ]
+    }
+  }
+}

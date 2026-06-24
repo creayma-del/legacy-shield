@@ -1,12 +1,12 @@
 {
   "version": "1",
-  "generatedAt": "2026-06-23T04:46:40.777Z",
-  "aliasHash": "32651d641bd99c8ce01a716a3a280462",
+  "generatedAt": "2026-06-24T02:11:39.002Z",
+  "aliasHash": "7b4eea9955c6462f0921097dc7e06d15",
   "entries": {
     "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/components/Header.vue": {
       "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/components/Header.vue",
       "mtime": 1782185657875.734,
-      "aliasHash": "32651d641bd99c8ce01a716a3a280462",
+      "aliasHash": "7b4eea9955c6462f0921097dc7e06d15",
       "dependencies": [
         {
           "spec": "../utils/format",
@@ -25,7 +25,7 @@
     "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/main.ts": {
       "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/main.ts",
       "mtime": 1782185621395.488,
-      "aliasHash": "32651d641bd99c8ce01a716a3a280462",
+      "aliasHash": "7b4eea9955c6462f0921097dc7e06d15",
       "dependencies": [
         {
           "spec": "./utils/format",
@@ -53,7 +53,7 @@
     "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/utils/request.ts": {
       "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/utils/request.ts",
       "mtime": 1782185644907.548,
-      "aliasHash": "32651d641bd99c8ce01a716a3a280462",
+      "aliasHash": "7b4eea9955c6462f0921097dc7e06d15",
       "dependencies": [],
       "exports": [
         "request"
@@ -61,8 +61,8 @@
     },
     "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/utils/format.ts": {
       "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/simple-project/src/utils/format.ts",
-      "mtime": 1782190010776.999,
-      "aliasHash": "32651d641bd99c8ce01a716a3a280462",
+      "mtime": 1782267109000.999,
+      "aliasHash": "7b4eea9955c6462f0921097dc7e06d15",
       "dependencies": [],
       "exports": [
         "format",

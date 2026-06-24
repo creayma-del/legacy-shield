@@ -1,0 +1,44 @@
+{
+  "version": "1",
+  "generatedAt": "2026-06-24T02:11:39.008Z",
+  "aliasHash": "e6d87557dfa3ad8c6913a2bc96183675",
+  "entries": {
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/webpack-alias-project/src/utils/helper.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/webpack-alias-project/src/utils/helper.ts",
+      "mtime": 1782214901241.2063,
+      "aliasHash": "e6d87557dfa3ad8c6913a2bc96183675",
+      "dependencies": [],
+      "exports": [
+        "helper"
+      ]
+    },
+    "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/webpack-alias-project/src/main.ts": {
+      "path": "/Users/creayma/personal/legacy-shield/tests/knowledge-graph/fixtures/webpack-alias-project/src/main.ts",
+      "mtime": 1782214917437.369,
+      "aliasHash": "e6d87557dfa3ad8c6913a2bc96183675",
+      "dependencies": [
+        {
+          "spec": "@/utils/helper",
+          "kind": "import",
+          "symbols": [
+            "helper"
+          ],
+          "unresolved": false,
+          "line": 1
+        },
+        {
+          "spec": "~/utils/helper",
+          "kind": "import",
+          "symbols": [
+            "tildeHelper"
+          ],
+          "unresolved": false,
+          "line": 2
+        }
+      ],
+      "exports": [
+        "main"
+      ]
+    }
+  }
+}

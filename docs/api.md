@@ -85,6 +85,12 @@ curl -s http://127.0.0.1:3456/health
 
 > `args` / `payload` / state 摘要均通过 `--redact-body-fields` 字段名单进行递归脱敏；state 摘要仅记录 keys 与字节数，不落盘完整值；JSON 序列化超过 64KB 时 `stateTruncated: true`。
 
+> **`source` 字段说明**（v1.4 起，store 相关子类型在 `context` 同级新增 `source` 字段，标识错误捕获路径）：
+> - `pinia-error`：`source` 为 `'pinia'`（v1.4 既有，不变）
+> - `pinia-plugin-error`：`source` 为 `'pinia-plugin'`（v1.4 既有，不变）
+> - `vuex-error`：`source` 为 `'vuex-store-patch'`（v1.4 既有，经 dispatch / commit / subscribeAction 包装捕获）
+> - `vuex-strict-violation`：`source` 为 `'vuex-store-patch'`（v1.4 既有，经 commit 包装捕获）或 `'vuex-strict-watcher'`（v1.6 PATCH-T2 新增，经 `Vue.watch` 直接 watcher 捕获）
+
 #### 请求示例
 
 ```bash
@@ -388,6 +394,8 @@ curl -s -X POST "$WEBHOOK_URL" -H "Content-Type: application/json" \
 
 `shield graph --project <path>` — 生成项目知识图谱。基于 Babel AST 静态分析 import / export / require / dynamic-import 依赖关系，输出文件级依赖图、循环依赖链、hub 文件、分层架构等关键信息，为 AI 智能体提供项目结构上下文。
 
+> v1.6 起，`graph` 子命令自动检测项目根目录下的 `webpack.config.{js,ts}` 与 `vite.config.{ts,js}`，解析 `resolve.alias` 配置并纳入路径解析（无需新增 CLI 参数）。alias 优先级：tsconfig paths > vite alias > webpack alias。
+
 ### 参数定义
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
@@ -456,14 +464,16 @@ node ./dist/cli.js graph --project /path/to/project --concurrency 16 --hub-thres
 
 - 相对路径（`./foo` / `../bar`）
 - tsconfig/jsconfig paths alias（`@/*` / `~/*` 等自定义 paths）
+- webpack `resolve.alias`（对象格式，含 webpack 5 对象形态）
+- vite `resolve.alias`（对象格式 + 数组格式）
 - node_modules 包（含 scoped 包，如 `@vue/compiler-sfc/foo`）
 - 扩展名补全（`.ts` / `.tsx` / `.js` / `.jsx` / `.vue`）
 - index 文件解析（`./utils` → `./utils/index.ts`）
 
+> alias 优先级：tsconfig paths > vite alias > webpack alias。`graph` 子命令自动检测 `webpack.config.{js,ts}` / `vite.config.{ts,js}`，无需新增 CLI 参数。
+
 **不支持的场景**：
 
-- webpack `resolve.alias` 配置（需读取 `webpack.config.js`）
-- vite `resolve.alias` 配置（需读取 `vite.config.ts`）
 - 动态 `import()` 变量表达式（标记为 `unresolved: true` 边）
 - 变量 `require()` 路径解析（标记为 `unresolved: true` 边）
 

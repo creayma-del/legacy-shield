@@ -491,12 +491,14 @@ declare global {
   function patchErrorHandler(config: Record<string, unknown>, appId: string): void {
     const originalErrorHandler = config.errorHandler as ((err: unknown, instance: unknown, info: string) => void) | undefined;
     config.errorHandler = (err: unknown, instance: unknown, info: string): void => {
+      // 1) 先调用业务 errorHandler（REQ-1.6-5：先业务 handler 后 shield 识别，不吞错）
       if (typeof originalErrorHandler === 'function') {
         try { originalErrorHandler(err, instance, info); } catch { /* 用户 handler 抛错不阻断 emit */ }
       } else {
         // 无原始 handler 时保留 Vue 默认控制台输出，使用原始 console 避免再次触发 shield 的 console-error 采集
         originalConsole.error(err, info);
       }
+      // 2) emit vue-render-error（PATCH-T2：strict 违规改由直接 watcher 捕获，errorHandler 不再识别 strict）
       emitRuntime('vue-render-error', buildVueErrorDetail(err, instance, info, appId), 'error');
     };
   }
@@ -815,6 +817,58 @@ declare global {
       }
     }
 
+    // 2.5) 包装 _p 数组中的 plugin：捕获 store 工厂遍历调用 plugin install 阶段的抛错
+    //    pinia.use 包装层（步骤 1）在 plugin 被 push 到 _p 之前捕获同步抛错；
+    //    _p 包装层在 plugin 被 store 工厂遍历调用时捕获 install 抛错。
+    //    两者通过 __shield_emitted__ 去重，不会重复落盘。
+    const plugins = pinia._p;
+    if (Array.isArray(plugins)) {
+      for (let i = 0; i < plugins.length; i++) {
+        const plugin = plugins[i];
+        if (!plugin) continue;
+        if (typeof plugin === 'function') {
+          // function 形态：包装整个 function
+          const fnMarker = plugin as Record<string, unknown>;
+          if (fnMarker.__shield_wrapped_plugin__ === true) continue;
+          const originalPlugin = plugin as (...args: unknown[]) => unknown;
+          const wrappedPlugin = function shieldWrappedPlugin(this: unknown, ...args: unknown[]): unknown {
+            try {
+              return originalPlugin.apply(this, args);
+            } catch (err) {
+              if (!isShieldEmitted(err)) {
+                markShieldEmitted(err);
+                emitRuntime('pinia-plugin-error', buildPiniaPluginErrorDetail(err, originalPlugin, appId), 'error');
+              }
+              throw err;
+            }
+          };
+          (wrappedPlugin as unknown as Record<string, unknown>).__shield_wrapped_plugin__ = true;
+          plugins[i] = wrappedPlugin;
+        } else if (typeof plugin === 'object') {
+          // 对象形态（install 为 function）：包装 install 方法
+          const pluginObj = plugin as Record<string, unknown>;
+          if (pluginObj.__shield_wrapped_plugin__ === true) continue;
+          if (typeof pluginObj.install === 'function') {
+            const originalInstall = pluginObj.install as (...args: unknown[]) => unknown;
+            const wrappedInstall = function shieldWrappedInstall(this: unknown, ...args: unknown[]): unknown {
+              try {
+                return originalInstall.apply(this, args);
+              } catch (err) {
+                if (!isShieldEmitted(err)) {
+                  markShieldEmitted(err);
+                  emitRuntime('pinia-plugin-error', buildPiniaPluginErrorDetail(err, plugin, appId), 'error');
+                }
+                throw err;
+              }
+            };
+            (wrappedInstall as unknown as Record<string, unknown>).__shield_wrapped_plugin__ = true;
+            pluginObj.install = wrappedInstall;
+            pluginObj.__shield_wrapped_plugin__ = true;
+          }
+        }
+      }
+    }
+
     // 3) 兜底：补登已注册但未走插件初始化的 store，逐 store try/catch 隔离单点失败
     const stores = pinia._s as { forEach?: (cb: (store: unknown) => void) => void } | undefined;
     if (stores && typeof stores.forEach === 'function') {
@@ -928,15 +982,49 @@ declare global {
     };
   }
 
+  // --- v1.6 PATCH-T2 Vuex strict 直接 watcher ---
+
+  /**
+   * 构建 vuex-strict-violation 的 detail 结构（直接 watcher 路径）。
+   * mutatedKeyPath 从 ctx.lastMutation 获取最近一次 mutation type（best-effort），
+   * 无 mutation 上下文时为 'unknown'。
+   * modulePath 从 mutation type 按命名空间约定推导（如 'user/setProfile' → 'user'），
+   * 无命名空间时为 ''（根模块），无 mutation 上下文时为 'unknown'。
+   */
+  function buildStrictViolationDetail(
+    store: Record<string, unknown>,
+    appId: string,
+    ctx: { lastMutation: { type: string; payload: unknown } | null },
+  ): Record<string, unknown> {
+    const mutationType = ctx.lastMutation?.type || '';
+    // Vuex 命名空间约定：'moduleA/moduleB/mutationName' → modulePath = 'moduleA/moduleB'
+    // 无 '/' 时为根模块 mutation，modulePath = ''
+    const lastSlash = mutationType.lastIndexOf('/');
+    const modulePath = mutationType === '' ? 'unknown' : lastSlash >= 0 ? mutationType.slice(0, lastSlash) : '';
+    return {
+      message: 'Do not mutate vuex store state outside mutation handlers.',
+      stack: '',
+      source: 'vuex-strict-watcher',
+      context: {
+        appId,
+        mutatedKeyPath: mutationType || 'unknown',
+        modulePath,
+        ...buildStateSummary((store as { state?: unknown }).state),
+      },
+    };
+  }
+
   function patchVuex(store: Record<string, unknown>, appId: string): void {
     if (!store || store.__shield_patched__ === true) return;
     store.__shield_patched__ = true;
 
     // T4 strict 识别需要的上下文（lastMutation 记录最近一次 mutation；prevStateKeys 记录 mutation 后的顶层 keys）
+    // PATCH-T2 新增 strictViolationEmitted：多属性违规去重标志位
     const ctx: {
       lastMutation: { type: string; payload: unknown } | null;
       prevStateKeys: string[] | null;
-    } = { lastMutation: null, prevStateKeys: null };
+      strictViolationEmitted: boolean;
+    } = { lastMutation: null, prevStateKeys: null, strictViolationEmitted: false };
 
     // 1) 监听 mutation 事件以刷新 ctx（subscribe 本身不产生 emit）
     const subscribeFn = store.subscribe;
@@ -954,6 +1042,8 @@ declare global {
           } catch {
             ctx.prevStateKeys = null;
           }
+          // PATCH-T2：每次 mutation 完成后重置 strict 违规去重标志，确保下一次违规能正常 emit
+          ctx.strictViolationEmitted = false;
         });
       } catch {
         // subscribe 注册失败不阻断后续 dispatch / commit 包装
@@ -1045,6 +1135,47 @@ declare global {
         });
       } catch {
         // subscribeAction 注册失败不阻断后续 patch
+      }
+    }
+
+    // 5) PATCH-T2: strict 模式直接 watcher
+    //    vendor 构建中 enableStrictMode 的 callback 可能为空（__DEV__ tree-shake），
+    //    shield 自建 watcher 直接检测 _committing === false 并 emit vuex-strict-violation。
+    //    多属性去重：flush:'sync' 下一次违规修改多个属性会同步触发 N 次 callback，
+    //    通过 ctx.strictViolationEmitted 标志位确保一次违规只 emit 一次（在 subscribe 回调中重置）。
+    if (store.strict === true) {
+      try {
+        // P3-1：与 patchVue 统一 Vue 全局对象获取优先级
+        // window.__VUE__ 在 Vue 3 全局构建中为 boolean true（devtools 标志），非 Vue 对象
+        // 需检查 __VUE__ 是否为含 watch 方法的对象，否则回退到 window.Vue
+        const vueFromShorthand = window.__VUE__ as Record<string, unknown> | undefined;
+        const vueFromGlobal = window.Vue as Record<string, unknown> | undefined;
+        const vueGlobal =
+          (vueFromShorthand && typeof vueFromShorthand.watch === 'function'
+            ? vueFromShorthand
+            : vueFromGlobal) || undefined;
+        const watchFn = vueGlobal?.watch as
+          | ((source: () => unknown, cb: () => void, options: { deep: boolean; flush: string }) => () => void)
+          | undefined;
+        if (typeof watchFn === 'function') {
+          watchFn(
+            () => (store as { _state?: { data?: unknown } })._state?.data,
+            () => {
+              if ((store as { _committing?: unknown })._committing === false && !ctx.strictViolationEmitted) {
+                try {
+                  ctx.strictViolationEmitted = true;
+                  const detail = buildStrictViolationDetail(store, appId, ctx);
+                  emitRuntime('vuex-strict-violation', detail, 'error');
+                } catch {
+                  // callback 内异常不阻断 watcher 后续触发
+                }
+              }
+            },
+            { deep: true, flush: 'sync' },
+          );
+        }
+      } catch {
+        // watcher 注册失败不阻断后续 patch
       }
     }
   }

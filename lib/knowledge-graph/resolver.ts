@@ -1,5 +1,7 @@
-import { existsSync, statSync, readFileSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
+import type { AliasEntry } from './config-loader.js';
+import { loadAliasConfig } from './config-loader.js';
 
 export interface ResolverOptions {
   /** 项目根目录 */
@@ -8,6 +10,8 @@ export interface ResolverOptions {
   baseUrl?: string;
   /** tsconfig/jsconfig compilerOptions.paths */
   paths?: Record<string, string[]>;
+  /** v1.6 新增：来自 vite/webpack 的 alias 列表（已按优先级合并，vite > webpack） */
+  aliases?: AliasEntry[];
 }
 
 export class ModuleResolver {
@@ -42,14 +46,31 @@ export class ModuleResolver {
   }
 
   private resolveAlias(spec: string): string | null {
-    if (!this.opts.paths) return null;
-    for (const [pattern, targets] of Object.entries(this.opts.paths)) {
-      // 先转义正则元字符，再替换 * 为捕获组
-      const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace('*', '(.*)');
-      const regex = new RegExp('^' + escaped + '$');
-      const match = spec.match(regex);
-      if (match) {
-        return targets[0].replace('*', match[1]);
+    // v1.6：优先匹配 tsconfig paths（最高优先级）
+    if (this.opts.paths) {
+      for (const [pattern, targets] of Object.entries(this.opts.paths)) {
+        // 先转义正则元字符，再替换 * 为捕获组
+        const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace('*', '(.*)');
+        const regex = new RegExp('^' + escaped + '$');
+        const match = spec.match(regex);
+        if (match) {
+          return targets[0].replace('*', match[1]);
+        }
+      }
+    }
+    // v1.6：再匹配 vite/webpack alias（合并后，vite > webpack）
+    // 注意：find 可能以 '/' 结尾（如 webpack 的 '~/'), 此时 startsWith(find + '/') 会
+    // 变成 startsWith('~//') 导致无法匹配；需按 find 是否以 '/' 结尾分支处理。
+    // 路径拼接使用 join 而非字符串拼接，避免 find 以 '/' 结尾时 suffix 缺少分隔符。
+    if (this.opts.aliases) {
+      for (const { find, replacement } of this.opts.aliases) {
+        const matched = find.endsWith('/')
+          ? spec.startsWith(find)
+          : spec === find || spec.startsWith(find + '/');
+        if (matched) {
+          const suffix = spec.slice(find.length);
+          return join(replacement, suffix);
+        }
       }
     }
     return null;
@@ -94,37 +115,17 @@ export class ModuleResolver {
 }
 
 /**
- * 从项目根目录读取 tsconfig.json / jsconfig.json，构造 ModuleResolver。
- * 优先读取 tsconfig.json，不存在则读取 jsconfig.json，均不存在时返回无 alias 配置的 resolver。
+ * 从项目根目录自动检测 tsconfig/jsconfig、vite.config、webpack.config，
+ * 按优先级合并 alias，构造 ModuleResolver。
+ * 优先级：tsconfig paths（最高）→ vite alias（中）→ webpack alias（最低）
+ * 配置文件仅加载一次（loadAliasConfig 按 projectRoot 缓存）。
  */
 export function createResolver(projectRoot: string): ModuleResolver {
-  const tsconfigPath = join(projectRoot, 'tsconfig.json');
-  const jsconfigPath = join(projectRoot, 'jsconfig.json');
-  let configPath: string | null = null;
-  if (existsSync(tsconfigPath)) {
-    configPath = tsconfigPath;
-  } else if (existsSync(jsconfigPath)) {
-    configPath = jsconfigPath;
-  }
-  if (!configPath) {
-    // 无 tsconfig/jsconfig 的纯 JS 项目，仅支持相对路径与 node_modules 解析
-    return new ModuleResolver({ projectRoot });
-  }
-  try {
-    const raw = readFileSync(configPath, 'utf8');
-    // 去除 JSON 注释（tsconfig 常见）
-    // 使用 [^\n] 限定单行匹配，无需 m 标志即可正确移除每行内的 // 注释
-    const cleaned = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-    const config = JSON.parse(cleaned);
-    const compilerOptions = config.compilerOptions ?? {};
-    // baseUrl 可能为相对路径（如 "."），需解析为基于 projectRoot 的绝对路径
-    const baseUrl: string | undefined = compilerOptions.baseUrl
-      ? resolve(projectRoot, compilerOptions.baseUrl)
-      : undefined;
-    const paths: Record<string, string[]> | undefined = compilerOptions.paths;
-    return new ModuleResolver({ projectRoot, baseUrl, paths });
-  } catch {
-    // 解析失败时降级为无 alias 配置
-    return new ModuleResolver({ projectRoot });
-  }
+  const aliasConfig = loadAliasConfig(projectRoot);
+  return new ModuleResolver({
+    projectRoot,
+    baseUrl: aliasConfig.baseUrl,
+    paths: aliasConfig.paths,
+    aliases: aliasConfig.mergedAliases,
+  });
 }

@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, isAbsolute } from 'node:path';
 import type { GraphOptions, GraphResult } from '../types.js';
 import type { KnowledgeGraph } from './types.js';
 import { createResolver } from './resolver.js';
 import { scanWithCache, computeAliasHash } from './scanner.js';
+import { loadAliasConfig } from './config-loader.js';
 import { buildGraph } from './graph.js';
 import { analyzeGraph, inferLayers } from './analyzer.js';
 import { writeJson } from './json-output.js';
@@ -90,9 +91,9 @@ async function runSinglePackageFlow(
   const srcDir = join(projectRoot, 'src');
   const filePaths = collectSourceFiles(srcDir);
 
-  // 3. 计算 aliasHash（读取 tsconfig/jsconfig 对象）
-  const tsconfig = readTsconfig(projectRoot);
-  const aliasHash = computeAliasHash(tsconfig);
+  // 3. 计算 aliasHash（复用 createResolver 已缓存的 aliasConfig，配置文件仅加载一次）
+  const aliasConfig = loadAliasConfig(projectRoot);
+  const aliasHash = computeAliasHash(aliasConfig);
 
   // 4. 带缓存的并发扫描（scanWithCache 封装 mtime 缓存与增量更新逻辑）
   const collected = await scanWithCache(
@@ -199,29 +200,4 @@ function collectSourceFiles(srcDir: string): string[] {
 
   walk(srcDir);
   return results;
-}
-
-/**
- * 读取 tsconfig.json / jsconfig.json 并返回解析后的对象。
- * 优先读取 tsconfig.json，不存在则读取 jsconfig.json，均不存在时返回 null。
- * 解析失败时返回 null。
- */
-function readTsconfig(projectRoot: string): object | null {
-  const tsconfigPath = join(projectRoot, 'tsconfig.json');
-  const jsconfigPath = join(projectRoot, 'jsconfig.json');
-  let configPath: string | null = null;
-  if (existsSync(tsconfigPath)) {
-    configPath = tsconfigPath;
-  } else if (existsSync(jsconfigPath)) {
-    configPath = jsconfigPath;
-  }
-  if (!configPath) return null;
-  try {
-    const raw = readFileSync(configPath, 'utf8');
-    // 去除 JSON 注释（tsconfig 常见）
-    const cleaned = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-    return JSON.parse(cleaned);
-  } catch {
-    return null;
-  }
 }

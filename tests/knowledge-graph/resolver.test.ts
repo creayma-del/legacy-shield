@@ -113,4 +113,95 @@ describe('ModuleResolver', () => {
     expect(result).toBe(join(tempDir, 'src', 'utils', 'helper.ts'));
     rmSync(tempDir, { recursive: true, force: true });
   });
+
+  // --- T8: alias 解析与优先级测试（TC-RES-12 ~ TC-RES-17）---
+
+  it('TC-RES-12: webpack alias 解析 @/utils/helper', () => {
+    const fixturePath = join(__dirname, 'fixtures/webpack-alias-project');
+    const resolver = createResolver(fixturePath);
+    const result = resolver.resolve('@/utils/helper', join(fixturePath, 'src', 'main.ts'));
+    expect(result).toBe(join(fixturePath, 'src', 'utils', 'helper.ts'));
+  });
+
+  it('TC-RES-13: webpack alias 解析 ~/utils/helper（find 以 / 结尾）', () => {
+    const fixturePath = join(__dirname, 'fixtures/webpack-alias-project');
+    const resolver = createResolver(fixturePath);
+    const result = resolver.resolve('~/utils/helper', join(fixturePath, 'src', 'main.ts'));
+    expect(result).toBe(join(fixturePath, 'src', 'utils', 'helper.ts'));
+  });
+
+  it('TC-RES-14: vite 对象格式 alias 解析 @/utils/helper', () => {
+    const fixturePath = join(__dirname, 'fixtures/vite-alias-project');
+    const resolver = createResolver(fixturePath);
+    const result = resolver.resolve('@/utils/helper', join(fixturePath, 'src', 'main.ts'));
+    expect(result).toBe(join(fixturePath, 'src', 'utils', 'helper.ts'));
+  });
+
+  it('TC-RES-15: vite 数组格式 alias 解析 @/components/Button', () => {
+    const fixturePath = join(__dirname, 'fixtures/vite-alias-project-array');
+    const resolver = createResolver(fixturePath);
+    const result = resolver.resolve('@/components/Button', join(fixturePath, 'src', 'main.ts'));
+    expect(result).toBe(join(fixturePath, 'src', 'components', 'Button.ts'));
+  });
+
+  it('TC-RES-16: 多来源优先级 tsconfig paths > vite alias > webpack alias', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'resolver-priority-'));
+    // tsconfig src（应被解析）
+    mkdirSync(join(tempDir, 'src', 'utils'), { recursive: true });
+    writeFileSync(join(tempDir, 'src', 'utils', 'helper.ts'), 'export const helper = 1;');
+    // vite src（不应被解析）
+    mkdirSync(join(tempDir, 'vite-src', 'utils'), { recursive: true });
+    writeFileSync(join(tempDir, 'vite-src', 'utils', 'helper.ts'), 'export const viteHelper = 1;');
+    // webpack src（不应被解析）
+    mkdirSync(join(tempDir, 'webpack-src', 'utils'), { recursive: true });
+    writeFileSync(join(tempDir, 'webpack-src', 'utils', 'helper.ts'), 'export const webpackHelper = 1;');
+
+    // tsconfig.json: @/* → src/*
+    writeFileSync(
+      join(tempDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@/*': ['src/*'] } } }),
+    );
+    // vite.config.ts: @ → vite-src
+    writeFileSync(
+      join(tempDir, 'vite.config.ts'),
+      `import path from 'node:path';\nexport default { resolve: { alias: { '@': path.resolve(__dirname, 'vite-src') } } };`,
+    );
+    // webpack.config.js: @ → webpack-src
+    writeFileSync(
+      join(tempDir, 'webpack.config.js'),
+      `const path = require('path');\nmodule.exports = { resolve: { alias: { '@': path.resolve(__dirname, 'webpack-src') } } };`,
+    );
+
+    const resolver = createResolver(tempDir);
+    const result = resolver.resolve('@/utils/helper', join(tempDir, 'src', 'main.ts'));
+    // 应解析为 tsconfig 的 src/utils/helper.ts，而非 vite/webpack 的路径
+    expect(result).toBe(join(tempDir, 'src', 'utils', 'helper.ts'));
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('TC-RES-17: resolveAlias 精确匹配与前缀匹配', () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'resolver-match-'));
+    mkdirSync(join(tempDir, 'src', 'utils'), { recursive: true });
+    writeFileSync(join(tempDir, 'src', 'utils', 'helper.ts'), 'export const helper = 1;');
+    writeFileSync(join(tempDir, 'src', 'index.ts'), 'export const index = 1;');
+
+    const resolver = new ModuleResolver({
+      projectRoot: tempDir,
+      aliases: [{ find: '@', replacement: join(tempDir, 'src') }],
+    });
+
+    // 精确匹配：spec === find（@ → src/index.ts via tryExtensions）
+    const exactResult = resolver.resolve('@', join(tempDir, 'main.ts'));
+    expect(exactResult).toBe(join(tempDir, 'src', 'index.ts'));
+
+    // 前缀匹配：spec.startsWith(find + '/')
+    const prefixResult = resolver.resolve('@/utils/helper', join(tempDir, 'main.ts'));
+    expect(prefixResult).toBe(join(tempDir, 'src', 'utils', 'helper.ts'));
+
+    // 非匹配：@utils 不匹配 @（非精确，非前缀 with /），fallthrough 到 node_modules 返回 null
+    const nonMatchResult = resolver.resolve('@utils', join(tempDir, 'main.ts'));
+    expect(nonMatchResult).toBeNull();
+
+    rmSync(tempDir, { recursive: true, force: true });
+  });
 });

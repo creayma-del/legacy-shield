@@ -189,11 +189,11 @@ describeIfChromium('pinia monitor', () => {
 
   // TC-3 设计意图：通过包装 pinia.use(plugin) 在插件 install 阶段抛错时落盘 pinia-plugin-error。
   // 实际 Pinia 2.x 中 `pinia.use(plugin)` 只把插件 push 到内部数组，插件的 install 是在
-  // store 首次实例化时由 Pinia 在 store 工厂内部遍历调用，错误会冒泡到 `useXxxStore()` 调用点，
-  // 而 inject.iife 的 pinia.use 包装层仅能捕获 `originalUse(plugin)` 自身的同步抛错，
-  // 因此当前实现链路下，插件 install 抛错不会经过 patchPinia 的 try/catch 进入 emit 路径。
-  // 此处保留断言代码作为后续 T7 联调（由 Vue errorHandler / store 工厂包装协同识别）依据。
-  it.skip('TC-3: captures pinia plugin install error - skipped (待 inject.iife 在 T7 补强插件 install 捕获链路)', async () => {
+  // store 首次实例化时由 Pinia 在 store 工厂内部遍历调用，错误会冒泡到 `useXxxStore()` 调用点。
+  // v1.6 已通过 _p 数组包装补强：patchPinia 遍历 pinia._p 数组，逐个包装 plugin function
+  // （含 function 形态与对象 install 形态）为 try/catch，使 plugin install 阶段抛错能被
+  // shield 捕获并落盘为 pinia-plugin-error。
+  it('TC-3: captures pinia plugin install error', async () => {
     const logs = await runFixture('vue-pinia-plugin-error.html', async (page) => {
       await page.evaluate(() => {
         const pinia = (window as unknown as { Pinia: { defineStore: (id: string, opts: unknown) => () => unknown } }).Pinia;
@@ -201,7 +201,7 @@ describeIfChromium('pinia monitor', () => {
         try {
           useFooStore();
         } catch {
-          // plugin install 抛错预期由 shield pinia.use 包装捕获，但当前实现路径未覆盖该场景
+          // plugin install 抛错由 shield _p 数组包装捕获并落盘为 pinia-plugin-error
         }
       });
       await page.waitForTimeout(500);
@@ -272,5 +272,30 @@ describeIfChromium('pinia monitor', () => {
     });
     expect(orderError).toBeDefined();
     expect((orderError!.context as Record<string, unknown>).actionName).toBe('failOnDemand');
+  });
+
+  // TC-RES-21：pinia._p 为 undefined / 非数组时静默跳过 plugin 包装（T1 异常路径验证）
+  it('TC-RES-21: pinia._p 不存在时静默跳过', async () => {
+    const logs = await runFixture('vue-pinia-error.html', async (page) => {
+      await page.evaluate(() => {
+        const vue = (window as unknown as {
+          Vue: { createApp: (opts: unknown) => { use: (plugin: unknown) => void; mount: (el: Element) => unknown } };
+        }).Vue;
+        const app = vue.createApp({});
+        // mock 对象有 install 和 _s 但 _p 为 undefined（非数组）
+        const mockPinia = {
+          install: () => {},
+          _s: new Map(),
+          _p: undefined,
+        };
+        // shield patched use 应识别 _p 非数组后静默跳过，不抛异常
+        app.use(mockPinia);
+        app.mount(document.createElement('div'));
+      });
+      await page.waitForTimeout(500);
+    });
+    // 不应产生 pinia-plugin-error（_p 为 undefined 时跳过 plugin 包装）
+    const pluginErrors = logs.filter((l) => l.subType === 'pinia-plugin-error');
+    expect(pluginErrors.length).toBe(0);
   });
 });

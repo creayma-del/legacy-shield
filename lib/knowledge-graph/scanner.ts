@@ -3,6 +3,7 @@ import { existsSync, statSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { ModuleResolver } from './resolver.js';
+import type { AliasConfig } from './config-loader.js';
 import type { CollectedDependency, CollectedFile } from './collector.js';
 import { collectDependencies } from './collector.js';
 
@@ -100,14 +101,19 @@ export async function saveCache(projectRoot: string, cache: CacheFile): Promise<
 
 /**
  * 计算 alias 配置 hash。
- * @param tsconfig tsconfig/jsconfig 对象，或 null（无配置文件）
+ * @param aliasConfig AliasConfig 对象（含 tsconfig/vite/webpack alias 来源），或 null（无配置文件）
  * @returns MD5 hash 字符串，或 'none'（无配置文件时）
  */
-export function computeAliasHash(tsconfig: object | null): string {
-  if (!tsconfig) return 'none';
-  const paths = (tsconfig as any).compilerOptions?.paths ?? {};
-  const baseUrl = (tsconfig as any).compilerOptions?.baseUrl ?? '';
-  return createHash('md5').update(JSON.stringify({ paths, baseUrl })).digest('hex');
+export function computeAliasHash(aliasConfig: AliasConfig | null): string {
+  if (!aliasConfig) return 'none';
+  const paths = aliasConfig.paths ? aliasConfig.paths : {};
+  const baseUrl = aliasConfig.baseUrl ?? '';
+  return createHash('md5').update(JSON.stringify({
+    paths,
+    baseUrl,
+    viteAliases: aliasConfig.viteAliases,
+    webpackAliases: aliasConfig.webpackAliases,
+  })).digest('hex');
 }
 
 /**

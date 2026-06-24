@@ -1,0 +1,11 @@
+{
+  "disabledSkills": [
+    "spec-guardian-doc-templates",
+    "spec-guardian-templates",
+    "spec-guardian-acceptance",
+    "spec-guardian-development",
+    "spec-guardian-spec",
+    "spec-guardian-design",
+    "spec-guardian-requirements"
+  ]
+}

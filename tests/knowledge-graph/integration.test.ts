@@ -9,6 +9,9 @@ const SIMPLE_FIXTURE = join(__dirname, 'fixtures/simple-project');
 const MONOREPO_FIXTURE = join(__dirname, 'fixtures/monorepo-project');
 const ALIAS_FIXTURE = join(__dirname, 'fixtures/alias-project');
 const CYCLE_FIXTURE = join(__dirname, 'fixtures/cycle-project');
+const WEBPACK_ALIAS_FIXTURE = join(__dirname, 'fixtures/webpack-alias-project');
+const VITE_ALIAS_FIXTURE = join(__dirname, 'fixtures/vite-alias-project');
+const VITE_ALIAS_ARRAY_FIXTURE = join(__dirname, 'fixtures/vite-alias-project-array');
 
 let tempOutDir: string;
 
@@ -172,5 +175,56 @@ describe('integration', () => {
 
     // 恢复 format.ts 原始内容
     writeFileSync(formatTsPath, "export function format(input: string): string {\n  return input.trim();\n}\n");
+  });
+
+  // --- T8: alias 端到端测试（TC-INT-6 ~ TC-INT-8）---
+
+  it('TC-INT-6: webpack alias 端到端（@/ 和 ~/ 均正确解析）', async () => {
+    const result = await runKnowledgeGraph(makeOptions(WEBPACK_ALIAS_FIXTURE, tempOutDir));
+    expect(result.nodeCount).toBeGreaterThan(0);
+    expect(result.edgeCount).toBeGreaterThan(0);
+
+    const jsonPath = join(tempOutDir, 'knowledge-graph.json');
+    const json = JSON.parse(readFileSync(jsonPath, 'utf8'));
+    // 断言 main.ts → helper.ts 边存在且已解析（@/utils/helper 和 ~/utils/helper 均指向同一文件）
+    const helperEdge = json.edges.find(
+      (e: { from: string; to: string; unresolved: boolean }) =>
+        e.from.endsWith('main.ts') && e.to.endsWith('helper.ts'),
+    );
+    expect(helperEdge).toBeDefined();
+    expect(helperEdge.unresolved).toBe(false);
+    expect(helperEdge.to).toContain('utils/helper.ts');
+  });
+
+  it('TC-INT-7: vite alias 端到端 - 对象格式（@/utils/helper 正确解析）', async () => {
+    const result = await runKnowledgeGraph(makeOptions(VITE_ALIAS_FIXTURE, tempOutDir));
+    expect(result.nodeCount).toBeGreaterThan(0);
+    expect(result.edgeCount).toBeGreaterThan(0);
+
+    const jsonPath = join(tempOutDir, 'knowledge-graph.json');
+    const json = JSON.parse(readFileSync(jsonPath, 'utf8'));
+    const helperEdge = json.edges.find(
+      (e: { from: string; to: string; unresolved: boolean }) =>
+        e.from.endsWith('main.ts') && e.to.endsWith('helper.ts'),
+    );
+    expect(helperEdge).toBeDefined();
+    expect(helperEdge.unresolved).toBe(false);
+    expect(helperEdge.to).toContain('utils/helper.ts');
+  });
+
+  it('TC-INT-8: vite alias 端到端 - 数组格式（@/components/Button 正确解析）', async () => {
+    const result = await runKnowledgeGraph(makeOptions(VITE_ALIAS_ARRAY_FIXTURE, tempOutDir));
+    expect(result.nodeCount).toBeGreaterThan(0);
+    expect(result.edgeCount).toBeGreaterThan(0);
+
+    const jsonPath = join(tempOutDir, 'knowledge-graph.json');
+    const json = JSON.parse(readFileSync(jsonPath, 'utf8'));
+    const buttonEdge = json.edges.find(
+      (e: { from: string; to: string; unresolved: boolean }) =>
+        e.from.endsWith('main.ts') && e.to.endsWith('Button.ts'),
+    );
+    expect(buttonEdge).toBeDefined();
+    expect(buttonEdge.unresolved).toBe(false);
+    expect(buttonEdge.to).toContain('components/Button.ts');
   });
 });

@@ -9,6 +9,7 @@ import {
   computeAliasHash,
 } from '../../lib/knowledge-graph/scanner.js';
 import { createResolver } from '../../lib/knowledge-graph/resolver.js';
+import type { AliasConfig } from '../../lib/knowledge-graph/config-loader.js';
 
 const SIMPLE_FIXTURE = join(__dirname, 'fixtures/simple-project');
 
@@ -192,25 +193,60 @@ describe('scanWithCache', () => {
 });
 
 describe('computeAliasHash', () => {
-  it('TC-SCAN-12: aliasHash 计算（无 tsconfig 时返回 none）', () => {
-    // 无 tsconfig 时返回 'none'
+  it('TC-SCAN-12: aliasHash 计算（无配置时返回 none）', () => {
+    // 无配置时返回 'none'
     expect(computeAliasHash(null)).toBe('none');
     // 有 paths 配置时返回 MD5 hash
-    const tsconfig1 = {
-      compilerOptions: { baseUrl: '.', paths: { '@/*': ['src/*'] } },
+    const aliasConfig1: AliasConfig = {
+      tsconfig: null,
+      baseUrl: '/project',
+      paths: { '@/*': ['src/*'] },
+      viteAliases: [],
+      webpackAliases: [],
+      mergedAliases: [],
     };
-    const hash1 = computeAliasHash(tsconfig1);
+    const hash1 = computeAliasHash(aliasConfig1);
     expect(hash1).not.toBe('none');
     expect(hash1).toMatch(/^[0-9a-f]{32}$/);
     // 相同配置返回相同 hash
-    const tsconfig2 = {
-      compilerOptions: { baseUrl: '.', paths: { '@/*': ['src/*'] } },
+    const aliasConfig2: AliasConfig = {
+      tsconfig: null,
+      baseUrl: '/project',
+      paths: { '@/*': ['src/*'] },
+      viteAliases: [],
+      webpackAliases: [],
+      mergedAliases: [],
     };
-    expect(computeAliasHash(tsconfig2)).toBe(hash1);
+    expect(computeAliasHash(aliasConfig2)).toBe(hash1);
     // 不同配置返回不同 hash
-    const tsconfig3 = {
-      compilerOptions: { baseUrl: '.', paths: { '@/*': ['src/sub/*'] } },
+    const aliasConfig3: AliasConfig = {
+      tsconfig: null,
+      baseUrl: '/project',
+      paths: { '@/*': ['src/sub/*'] },
+      viteAliases: [],
+      webpackAliases: [],
+      mergedAliases: [],
     };
-    expect(computeAliasHash(tsconfig3)).not.toBe(hash1);
+    expect(computeAliasHash(aliasConfig3)).not.toBe(hash1);
+    // 含 vite/webpack alias 时 hash 与仅 tsconfig 时不同
+    const aliasConfigWithVite: AliasConfig = {
+      tsconfig: null,
+      baseUrl: '/project',
+      paths: { '@/*': ['src/*'] },
+      viteAliases: [{ find: '~', replacement: '/src' }],
+      webpackAliases: [],
+      mergedAliases: [{ find: '~', replacement: '/src' }],
+    };
+    expect(computeAliasHash(aliasConfigWithVite)).not.toBe(hash1);
+    // 含 webpack alias 时 hash 与仅 tsconfig 时不同
+    const aliasConfigWithWebpack: AliasConfig = {
+      tsconfig: null,
+      baseUrl: '/project',
+      paths: { '@/*': ['src/*'] },
+      viteAliases: [],
+      webpackAliases: [{ find: '~', replacement: '/src' }],
+      mergedAliases: [{ find: '~', replacement: '/src' }],
+    };
+    expect(computeAliasHash(aliasConfigWithWebpack)).not.toBe(hash1);
   });
 });
